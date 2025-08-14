@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Optional, Dict, Sequence
-import re, unicodedata
+import re
+import unicodedata
 import pandas as pd
 from pathlib import Path as _P
 
