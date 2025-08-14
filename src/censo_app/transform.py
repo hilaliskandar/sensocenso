@@ -189,6 +189,16 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     return long[keep]
 
 def aggregate_pyramid(df: pd.DataFrame, group_by: Sequence[str] | None = None) -> pd.DataFrame:
+    """
+    Aggregates a population pyramid DataFrame by specified grouping columns, age group, and sex.
+
+    Parameters:
+        df (pd.DataFrame): The input DataFrame, either in wide or long format, containing population data.
+        group_by (Sequence[str] | None): Optional sequence of column names to group by in addition to age group and sex.
+
+    Returns:
+        pd.DataFrame: Aggregated DataFrame with summed 'valor' for each group, sorted by grouping columns, age group, and sex.
+    """
     group_by = list(group_by or [])
     need_long = not ({"idade_grupo","sexo","valor"} <= set(df.columns))
     df_long = wide_to_long_pyramid(df) if need_long else df.copy()
