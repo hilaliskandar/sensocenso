@@ -1,0 +1,15 @@
+
+__pycache__/
+*.py[cod]
+*.so
+data/*
+!data/.gitkeep
+.cache/
+*.parquet
+*.csv
+.env
+.venv/
+venv/
+.streamlit/secrets.toml
+.DS_Store
+Thumbs.db
