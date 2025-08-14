@@ -68,7 +68,7 @@ def _rename_by_alias(df: pd.DataFrame) -> pd.DataFrame:
                 break
     return df.rename(columns=rename)
 
-def _derive_macro_from_cd(cd):
+def _derive_macro_from_cd(cd: object) -> Optional[str]:
     try:
         c = int(str(cd))
     except Exception:
