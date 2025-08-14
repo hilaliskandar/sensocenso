@@ -1,17 +1,12 @@
-
+import sys
+from pathlib import Path
 import streamlit as st
 
-st.set_page_config(page_title="Censo 2022 — Plataforma", layout="wide")
-st.title("Censo 2022 — Plataforma de Análise")
-st.write(
-    "Explore dados demográficos do Censo 2022 e construa pirâmides etárias. "
-    "Use as páginas na barra lateral."
-)
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-st.markdown(
-    """
-    **Páginas:**
-    - **00_Busca_QA**: RAG/Haystack sobre notas e documentação.
-    - **01_Piramide_Etaria**: Visualize pirâmides etárias por Brasil/UF/Município (arquivo local ou SIDRA).
-    """
-)
+st.set_page_config(page_title="Censo 2022 — SP (v1.9.2)", layout="wide")
+st.title("Censo 2022 — Plataforma SP (v1.9.2)")
+st.write("Abra a página **02_Piramide_Etaria** no menu lateral.")
