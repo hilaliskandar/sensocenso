@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Sequence
 import re, unicodedata
 import pandas as pd
 from pathlib import Path as _P
@@ -31,6 +31,7 @@ TIPO_MAP: Dict[int, str] = {
     8: "Agrovila do PA",
     9: "Agrupamento quilombola",
 }
+
 AGE_GROUPS = [
     "0 a 4 anos","5 a 9 anos","10 a 14 anos","15 a 19 anos",
     "20 a 24 anos","25 a 29 anos","30 a 39 anos","40 a 49 anos",
@@ -101,9 +102,8 @@ def _ensure_decodes(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 def _pick_exact_age_cols(columns: List[str]) -> Tuple[List[str], List[str]]:
-    groups = AGE_GROUPS
     male_cols, female_cols = [], []
-    for grp in groups:
+    for grp in ["0 a 4 anos","5 a 9 anos","10 a 14 anos","15 a 19 anos","20 a 24 anos","25 a 29 anos","30 a 39 anos","40 a 49 anos","50 a 59 anos","60 a 69 anos","70 anos ou mais"]:
         pat_m = re.compile(rf"^Sexo\s*masculino\s*,\s*{re.escape(grp)}\s*(?:_\d+)?$", re.IGNORECASE)
         pat_f = re.compile(rf"^Sexo\s*feminino\s*,\s*{re.escape(grp)}\s*(?:_\d+)?$", re.IGNORECASE)
         m_match = next((c for c in columns if pat_m.match(str(c).strip())), None)
@@ -129,6 +129,8 @@ def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, ver
     q = f"SELECT {', '.join(sel_cols)} FROM read_parquet('{path_parquet}') {where}"
     if limit:
         q += f" LIMIT {int(limit)}"
+    if verbose:
+        print(q)
     df = con.execute(q).fetchdf()
     df = _rename_by_alias(df)
     df = _normalize_codes(df)
@@ -166,4 +168,17 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     long["sexo"] = parsed.map(lambda t: t[0])
     long["idade_grupo"] = parsed.map(lambda t: t[1])
     long["idade_grupo"] = pd.Categorical(long["idade_grupo"], categories=AGE_GROUPS, ordered=True)
-    return long
+    keep = [c for c in ["CD_SETOR","CD_MUN","NM_MUN","CD_UF","NM_UF","CD_SITUACAO","SITUACAO","SITUACAO_DET_TXT","CD_TIPO","TP_SETOR_TXT","V0001","idade_grupo","sexo","valor"] if c in long.columns]
+    return long[keep]
+
+def aggregate_pyramid(df: pd.DataFrame, group_by: Sequence[str] | None = None) -> pd.DataFrame:
+    group_by = list(group_by or [])
+    need_long = not ({"idade_grupo","sexo","valor"} <= set(df.columns))
+    df_long = wide_to_long_pyramid(df) if need_long else df.copy()
+    if "idade_grupo" in df_long.columns:
+        df_long["idade_grupo"] = pd.Categorical(df_long["idade_grupo"], categories=AGE_GROUPS, ordered=True)
+    keys = [c for c in group_by if c in df_long.columns] + ["idade_grupo","sexo"]
+    out = (df_long.groupby(keys, dropna=False, as_index=False)["valor"].sum()
+                  .sort_values(keys)
+                  .reset_index(drop=True))
+    return out
