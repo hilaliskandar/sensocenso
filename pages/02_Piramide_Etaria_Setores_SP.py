@@ -134,7 +134,13 @@ if go:
             if sel_mun is None:
                 st.warning("Escolha um município para totalizar.")
                 st.stop()
-            df_plot = aggregate_pyramid(df_view, "municipio", key=sel_mun)
+            df_plot = aggregate_pyramid(df_view, ["setor"], key=key)
+
+        else:  # Total do município
+            if sel_mun is None:
+                st.warning("Escolha um município para totalizar.")
+                st.stop()
+            df_plot = aggregate_pyramid(df_view, ["municipio"], key=sel_mun)
 
     elif modo == "municipio" and "CD_MUN" in df_long.columns:
         if all(c in df_long.columns for c in ["CD_MUN","NM_MUN"]):
