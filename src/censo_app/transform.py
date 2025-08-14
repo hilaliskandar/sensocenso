@@ -114,6 +114,22 @@ def _pick_exact_age_cols(columns: List[str]) -> Tuple[List[str], List[str]]:
     return male_cols, female_cols
 
 def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, verbose: bool = False, uf_code: str = "35") -> pd.DataFrame:
+    """
+    Loads and processes a parquet file containing census data, returning a DataFrame with standardized columns and decoded values.
+
+    Parameters:
+        path_parquet (str): Path to the parquet file to load.
+        limit (Optional[int], optional): Maximum number of rows to load. If None, loads all rows. Defaults to None.
+        verbose (bool, optional): If True, prints the SQL query used to load the data. Defaults to False.
+        uf_code (str, optional): UF (state) code to filter the data. Defaults to "35" (São Paulo).
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame containing the loaded and processed census data.
+
+    Raises:
+        ModuleNotFoundError: If the 'duckdb' module is not installed.
+        FileNotFoundError: If the specified parquet file does not exist.
+    """
     if duckdb is None:
         raise ModuleNotFoundError("Instale 'duckdb' (pip install duckdb).")
     p = _P(path_parquet)
