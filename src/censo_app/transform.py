@@ -145,7 +145,7 @@ def _normalize_codes(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     for key in ("CD_SETOR","CD_MUN","CD_UF"):
         if key in out.columns:
-            out[key] = out[key].astype(str).apply(lambda x: re.match(r"^\d+$", x).group(0) if re.match(r"^\d+$", x) else x)
+            out[key] = out[key].astype(str).where(out[key].astype(str).str.match(r"^\d+$"), out[key])
     return out
 
 
