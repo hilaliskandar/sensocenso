@@ -238,7 +238,6 @@ def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, ver
             df[v] = pd.to_numeric(df[v], errors="coerce").astype("float64")
         else:
             df[v] = pd.to_numeric(df[v], errors="coerce")
-            df[v] = pd.to_numeric(df[v], errors="coerce")
     return df
 
 
