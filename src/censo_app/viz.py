@@ -27,6 +27,8 @@ def make_age_pyramid(df: pd.DataFrame, title: str = "Pirâmide etária") -> go.F
         yaxis_title="Grupo de idade",
         bargap=0.1,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
     )
     fig.update_xaxes(tickformat=",", title=None)
     return fig

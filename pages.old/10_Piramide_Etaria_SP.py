@@ -9,15 +9,17 @@ try:
 except Exception:
     st_autorefresh = None
 
-SRC = _P(__file__).resolve().parents[1] / "src"
+SRC = _P(__file__).resolve().parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from censo_app.transform import load_sp_age_sex_enriched, wide_to_long_pyramid, SITUACAO_DET_MAP, TIPO_MAP
+from censo_app.transform import (
+    load_sp_age_sex_enriched, aggregate_pyramid, SITUACAO_DET_MAP, TIPO_MAP
+)
 from censo_app.viz import make_age_pyramid
 
-st.set_page_config(layout="wide")
-st.title("🏛️ Pirâmide Etária — SP (setor / município) — v1.9.1")
+st.set_page_config(page_title="Censo 2022 — SP (v1.9.3a)", layout="wide")
+st.title("🏛️ Pirâmide Etária — SP (setor / município) — v1.9.3a")
 
 with st.sidebar:
     keepalive = st.checkbox("Evitar expirar (autorefresh a cada 5 min)", value=False)
@@ -27,42 +29,41 @@ with st.sidebar:
         st.info("Para ativar o autorefresh instale: pip install streamlit-autorefresh")
 
 def _norm(s: str) -> str:
-    return (s or "").strip().strip('"').strip("'").replace("\\", "/")
+    return (s or "").strip().strip('\"').strip("'").replace("\\", "/")
 
 parquet_path = st.text_input("Parquet (SP)", st.session_state.get("parquet_path", r"D:\\repo\\saida_parquet\\base_integrada_final.parquet"), key="parquet_path")
 parquet_path = _norm(parquet_path)
 
 @st.cache_data(show_spinner=True, ttl=3600)
-def _load_wide(path: str) -> pd.DataFrame:
+def _load(path: str) -> pd.DataFrame:
     return load_sp_age_sex_enriched(path, limit=None, verbose=False, uf_code="35")
 
 try:
-    df_wide = _load_wide(parquet_path)
-    st.success(f"{len(df_wide):,} linhas (setores) lidas.")
+    df = _load(parquet_path)
+    st.success(f"{len(df):,} linhas (SP) carregadas.")
 except Exception as e:
     st.error(f"Falha ao ler Parquet: {e}")
     st.stop()
 
 with st.expander("Filtros", expanded=True):
     c1,c2,c3 = st.columns(3)
-    if "SITUACAO" in df_wide.columns:
-        macro_opts = sorted([x for x in df_wide["SITUACAO"].dropna().unique().tolist() if x in ("Urbana","Rural")]) or ["Urbana","Rural"]
+    if "SITUACAO" in df.columns:
+        macro_opts = sorted([x for x in df["SITUACAO"].dropna().unique().tolist() if x in ("Urbana","Rural")]) or ["Urbana","Rural"]
         sel_macro = c1.multiselect("Situação (Urbana/Rural)", macro_opts, default=st.session_state.get("sel_macro", macro_opts), key="sel_macro")
-        if sel_macro: df_wide = df_wide[df_wide["SITUACAO"].isin(sel_macro)]
-    if "CD_SITUACAO" in df_wide.columns:
+        if sel_macro: df = df[df["SITUACAO"].isin(sel_macro)]
+    if "CD_SITUACAO" in df.columns:
         sit_opts = list(SITUACAO_DET_MAP.items())
         default_sit = st.session_state.get("sel_sit", sit_opts)
         sel_sit = c2.multiselect("Situação detalhada (CD_SITUACAO)", sit_opts, default=default_sit, format_func=lambda t: f"{t[0]} — {t[1]}", key="sel_sit")
-        if sel_sit: df_wide = df_wide[df_wide["CD_SITUACAO"].isin([k for k,_ in sel_sit])]
-    if "CD_TIPO" in df_wide.columns:
+        if sel_sit: df = df[df["CD_SITUACAO"].isin([k for k,_ in sel_sit])]
+    if "CD_TIPO" in df.columns:
         tipo_opts = list(TIPO_MAP.items())
         default_tipo = st.session_state.get("sel_tipo", tipo_opts)
         sel_tipo = c3.multiselect("Tipo do Setor (CD_TIPO)", tipo_opts, default=default_tipo, format_func=lambda t: f"{t[0]} — {t[1]}", key="sel_tipo")
-        if sel_tipo: df_wide = df_wide[df_wide["CD_TIPO"].isin([k for k,_ in sel_tipo])]
+        if sel_tipo: df = df[df["CD_TIPO"].isin([k for k,_ in sel_tipo])]
 
-# município
-if set(["CD_MUN","NM_MUN"]).issubset(df_wide.columns):
-    mun_df = df_wide[["CD_MUN","NM_MUN"]].dropna().drop_duplicates().sort_values(["NM_MUN","CD_MUN"])
+if set(["CD_MUN","NM_MUN"]).issubset(df.columns):
+    mun_df = df[["CD_MUN","NM_MUN"]].dropna().drop_duplicates().sort_values(["NM_MUN","CD_MUN"])
     name_map = dict(zip(mun_df["CD_MUN"], mun_df["NM_MUN"]))
     options_mun = [None]+mun_df["CD_MUN"].tolist()
     default_mun = st.session_state.get("sel_mun", None)
@@ -72,7 +73,7 @@ if set(["CD_MUN","NM_MUN"]).issubset(df_wide.columns):
     if sel_mun is None:
         st.info("Selecione um município para continuar.")
         st.stop()
-    df_mun = df_wide[df_wide["CD_MUN"] == sel_mun]
+    df_mun = df[df["CD_MUN"] == sel_mun]
 else:
     st.error("Colunas CD_MUN/NM_MUN ausentes na base.")
     st.stop()
@@ -97,9 +98,8 @@ if modo == "Lista de setores":
     st.dataframe(df_mun[cols_show].drop_duplicates().sort_values("CD_SETOR"), use_container_width=True, height=600)
     st.stop()
 
-# MUNICÍPIO TOTAL
 if modo == "Pirâmide do município (total)":
-    df_long = wide_to_long_pyramid(df_mun)
+    df_long = aggregate_pyramid(df_mun, group_by=[])
     df_plot = df_long.groupby(["idade_grupo","sexo"], as_index=False)["valor"].sum()
 
     tbl = _agg_long(df_plot)
@@ -122,7 +122,6 @@ if modo == "Pirâmide do município (total)":
         st.write(f"**Diferença (M+F − V0001):** {diff:+,}" + (f" ({pct:.3f}% do V0001)" if pct is not None else ""))
     st.stop()
 
-# SETOR ESPECÍFICO
 label_det = "SITUACAO_DET_TXT" if "SITUACAO_DET_TXT" in df_mun.columns else None
 if "CD_SETOR" in df_mun.columns:
     cols_sel = ["CD_SETOR"] + ([label_det] if label_det else [])
@@ -141,8 +140,7 @@ else:
     st.stop()
 
 df_sector = df_mun[df_mun["CD_SETOR"] == sel_setor].copy()
-df_long = wide_to_long_pyramid(df_sector)
-df_plot = df_long.groupby(["idade_grupo","sexo"], as_index=False)["valor"].sum()
+df_plot = aggregate_pyramid(df_sector, group_by=[])
 
 tbl = _agg_long(df_plot)
 total_mf = int(tbl["Total_faixa"].sum())
@@ -167,5 +165,5 @@ st.write(f"**Soma M+F (todas as faixas):** {total_mf:,}")
 if total_decl is not None:
     diff = total_mf - total_decl
     pct = (diff/total_decl*100) if total_decl else None
-    st.write(f"**Total de pessoas (V0001 — "Total de pessoas"):** {total_decl:,}")
+    st.write(f"**Total de pessoas (V0001 — \"Total de pessoas\"):** {total_decl:,}")
     st.write(f"**Diferença (M+F − V0001):** {diff:+,}" + (f" ({pct:.3f}% do V0001)" if pct is not None else ""))

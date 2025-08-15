@@ -1,0 +1,43 @@
+idade_grupo,sexo,valor,cod,nome
+0 a 4,Masculino,6456709,1,Brasil
+0 a 4,Feminino,6856093,1,Brasil
+5 a 9,Masculino,6574104,1,Brasil
+5 a 9,Feminino,6980749,1,Brasil
+10 a 14,Masculino,6691498,1,Brasil
+10 a 14,Feminino,7105405,1,Brasil
+15 a 19,Masculino,6808893,1,Brasil
+15 a 19,Feminino,7230062,1,Brasil
+20 a 24,Masculino,6691498,1,Brasil
+20 a 24,Feminino,7105405,1,Brasil
+25 a 29,Masculino,6574104,1,Brasil
+25 a 29,Feminino,6980749,1,Brasil
+30 a 34,Masculino,6339314,1,Brasil
+30 a 34,Feminino,6731437,1,Brasil
+35 a 39,Masculino,6104525,1,Brasil
+35 a 39,Feminino,6482124,1,Brasil
+40 a 44,Masculino,5869735,1,Brasil
+40 a 44,Feminino,6232812,1,Brasil
+45 a 49,Masculino,5634946,1,Brasil
+45 a 49,Feminino,5983499,1,Brasil
+50 a 54,Masculino,5400156,1,Brasil
+50 a 54,Feminino,5734187,1,Brasil
+55 a 59,Masculino,5165367,1,Brasil
+55 a 59,Feminino,5484874,1,Brasil
+60 a 64,Masculino,4813183,1,Brasil
+60 a 64,Feminino,5110906,1,Brasil
+65 a 69,Masculino,4460999,1,Brasil
+65 a 69,Feminino,4736937,1,Brasil
+70 a 74,Masculino,3991420,1,Brasil
+70 a 74,Feminino,4238312,1,Brasil
+75 a 79,Masculino,3404446,1,Brasil
+75 a 79,Feminino,3615031,1,Brasil
+80 a 84,Masculino,2817473,1,Brasil
+80 a 84,Feminino,2991749,1,Brasil
+85 a 89,Masculino,2113104,1,Brasil
+85 a 89,Feminino,2243812,1,Brasil
+90 a 94,Masculino,1408736,1,Brasil
+90 a 94,Feminino,1495874,1,Brasil
+95 a 99,Masculino,821763,1,Brasil
+95 a 99,Feminino,872593,1,Brasil
+100 anos ou mais,Masculino,352184,1,Brasil
+100 anos ou mais,Feminino,373968,1,Brasil
