@@ -116,7 +116,6 @@ def _rename_by_alias(df: pd.DataFrame) -> pd.DataFrame:
     """
     Renomeia colunas do DataFrame para nomes canônicos, usando o dicionário ALIASES.
     Isso garante padronização para processamento posterior, independentemente do layout original.
-    """
     rename = {}
     norm_lookup = {_normcol(c): c for c in df.columns}
     for canon, variants in ALIASES.items():
