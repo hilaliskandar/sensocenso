@@ -251,7 +251,6 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     """
     Converte DataFrame de formato wide (colunas por faixa etária/sexo) para formato long.
     Essencial para análises de pirâmide etária e cálculo de indicadores demográficos.
-    """
     if "SITUACAO" not in df_wide.columns and "CD_SITUACAO" in df_wide.columns:
         df_wide = df_wide.copy()
         df_wide["SITUACAO"] = df_wide["CD_SITUACAO"].apply(_derive_macro_from_cd)
