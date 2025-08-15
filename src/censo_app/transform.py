@@ -111,7 +111,7 @@ def _normalize_simple(s: str) -> str:
     s = "".join(c for c in s if not unicodedata.combining(c))
     return s
 
-def _merge_rm_au(df: pd.DataFrame, excel_path: str = r"D:\repo\insumos\Composicao_RM_2024.xlsx") -> pd.DataFrame:
+def _merge_rm_au(df: pd.DataFrame, excel_path: str = "insumos/Composicao_RM_2024.xlsx") -> pd.DataFrame:
     p = _P(excel_path)
     if not p.exists():
         return df
