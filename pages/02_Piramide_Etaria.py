@@ -4,10 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-try:
-    from streamlit_autorefresh import st_autorefresh
-except Exception:
-    st_autorefresh = None
+
 
 SRC = _P(__file__).resolve().parents[1] / "src"
 if str(SRC) not in sys.path:
@@ -16,6 +13,8 @@ if str(SRC) not in sys.path:
 from censo_app.transform import (
     load_sp_age_sex_enriched, aggregate_pyramid, SITUACAO_DET_MAP, TIPO_MAP
 )
+from censo_app.indicadores_demograficos import calcular_indicadores_df
+from censo_app.transform import VARIAVEL_DESCRICAO
 from censo_app.viz import make_age_pyramid
 
 st.set_page_config(layout="wide")
@@ -23,9 +22,7 @@ st.title("🏛️ Pirâmide Etária — SP (setor / município) — v1.9.2")
 
 with st.sidebar:
     keepalive = st.checkbox("Evitar expirar (autorefresh a cada 5 min)", value=False)
-    if keepalive and st_autorefresh:
-        st_autorefresh(interval=5*60*1000, key="keepalive")
-    elif keepalive:
+    if keepalive:
         st.info("Para ativar o autorefresh instale: pip install streamlit-autorefresh")
 
 def _norm(s: str) -> str:
@@ -123,6 +120,12 @@ if modo == "Pirâmide do município (total)":
         pct = (diff/total_decl*100) if total_decl else None
         st.write(f"**Total de pessoas (V0001):** {total_decl:,}")
         st.write(f"**Diferença (M+F − V0001):** {diff:+,}" + (f" ({pct:.3f}% do V0001)" if pct is not None else ""))
+    # Calcular e exibir indicadores demográficos
+    st.subheader("Indicadores Demográficos — Município")
+    indicadores = calcular_indicadores_df(df_long)
+    for var, val in indicadores.items():
+        desc = VARIAVEL_DESCRICAO.get(var, "")
+        st.write(f"**{var}:** {val:.3f}  ", f"<span title='{desc}'>ℹ️</span>", unsafe_allow_html=True)
     st.stop()
 
 # Setor específico
@@ -169,5 +172,11 @@ st.write(f"**Soma M+F (todas as faixas):** {total_mf:,}")
 if total_decl is not None:
     diff = total_mf - total_decl
     pct = (diff/total_decl*100) if total_decl else None
-    st.write(f"**Total de pessoas (V0001 — "Total de pessoas"):** {total_decl:,}")
+    st.write(f"**Total de pessoas (V0001 — 'Total de pessoas'):** {total_decl:,}")
     st.write(f"**Diferença (M+F − V0001):** {diff:+,}" + (f" ({pct:.3f}% do V0001)" if pct is not None else ""))
+    # Calcular e exibir indicadores demográficos
+st.subheader("Indicadores Demográficos — Setor")
+indicadores = calcular_indicadores_df(df_long)
+for var, val in indicadores.items():
+    desc = VARIAVEL_DESCRICAO.get(var, "")
+    st.write(f"**{var}:** {val:.3f}  ", f"<span title='{desc}'>ℹ️</span>", unsafe_allow_html=True)
