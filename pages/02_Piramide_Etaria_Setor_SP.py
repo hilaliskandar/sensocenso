@@ -123,7 +123,11 @@ st.subheader("Indicadores Demográficos — Município")
 indicadores = calcular_indicadores_df(df_long)
 for var, val in indicadores.items():
     desc = VARIAVEL_DESCRICAO.get(var, "")
-    st.write(f"**{var}:** {val:.3f}  ", f"<span title='{desc}'>ℹ️</span>", unsafe_allow_html=True)
+    st.subheader("Indicadores Demográficos — Município")
+    indicadores = calcular_indicadores_df(df_long)
+    for var, val in indicadores.items():
+        desc = VARIAVEL_DESCRICAO.get(var, "")
+        st.write(f"**{var}:** {val:.3f}  ", f"<span title='{desc}'>ℹ️</span>", unsafe_allow_html=True)
     st.stop()
 
 # SETOR ESPECÍFICO
