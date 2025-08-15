@@ -1,7 +1,9 @@
 import duckdb, os, pathlib
 
 # 1) Autenticação — pegue seu token no MotherDuck e guarde numa env var
-os.environ["motherduck_token"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImhpbGFsaXNrYW5kYXJAZ21haWwuY29tIiwic2Vzc2lvbiI6ImhpbGFsaXNrYW5kYXIuZ21haWwuY29tIiwicGF0IjoiSndLRXhHSGx2TXRJME5lTTROOTA1WWMwSlhyUEs5OGV6UnB0QWFJeVJPYyIsInVzZXJJZCI6IjI2ODYxMmY0LWFhNWYtNGUxZi1hOWMzLTAxYzFmM2IyYjNhMyIsImlzcyI6Im1kX3BhdCIsInJlYWRPbmx5IjpmYWxzZSwidG9rZW5UeXBlIjoicmVhZF93cml0ZSIsImlhdCI6MTc1NTIyOTA1Mn0.TYmOwWMJYIUbVHuLrislouNIDGco9N6Re2Gpm2trObc"  # ou use keyring/.env
+# O token MotherDuck deve ser definido na variável de ambiente 'motherduck_token'
+if "motherduck_token" not in os.environ:
+    raise RuntimeError("O token MotherDuck não foi encontrado na variável de ambiente 'motherduck_token'. Defina-o antes de executar este script.")
 
 # 2) Conecta no MD (usa o token automaticamente)
 con = duckdb.connect("md:sensocenso")  # "md:<nome_do_db>"
