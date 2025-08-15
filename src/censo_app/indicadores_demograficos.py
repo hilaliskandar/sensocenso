@@ -5,7 +5,12 @@ Baseado nas recomendações técnicas e operacionais fornecidas.
 import pandas as pd
 import numpy as np
 
-def calcular_populacoes_agrupadas(df, idade_col='idade', sexo_col='sexo', pop_col='pop'):
+def calcular_populacoes_agrupadas(
+    df: pd.DataFrame,
+    idade_col: str = 'idade',
+    sexo_col: str = 'sexo',
+    pop_col: str = 'pop'
+) -> dict[str, float]:
     """
     Agrega populações por faixas etárias e sexo, retornando um dicionário com os principais grupos.
     Espera DataFrame no formato long: CodIBGE, Municipio, sexo, idade, pop
