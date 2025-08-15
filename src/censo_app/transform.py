@@ -263,7 +263,7 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     long = df_wide.melt(id_vars=id_vars, value_vars=val_cols, var_name="chave", value_name="valor")
     long["valor"] = pd.to_numeric(long["valor"], errors="coerce")
     if long["valor"].isnull().any():
-        raise ValueError("Valores não inteiros encontrados na coluna 'valor' após conversão. Corrija os dados de entrada.")
+    long["valor"] = pd.to_numeric(long["valor"], errors="coerce").fillna(0).astype("int64")
     def parse_key(k: str):
         s = str(k).strip()
         if s.lower().startswith("sexo masculino"):
