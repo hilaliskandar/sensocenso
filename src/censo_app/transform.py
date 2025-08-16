@@ -70,6 +70,18 @@ TIPO_MAP: Dict[int, str] = {
     9: "Agrupamento quilombola",
 }
 
+# Mapa para situação macro do setor (baseado em _derive_macro_from_cd)
+SITUACAO_MAP: Dict[int, str] = {
+    1: "Urbana",
+    2: "Urbana", 
+    3: "Urbana",
+    5: "Rural",
+    6: "Rural",
+    7: "Rural",
+    8: "Rural",
+    9: "Rural",
+}
+
 
 # Faixas etárias padrão para pirâmides etárias e indicadores demográficos
 AGE_GROUPS = [
@@ -113,9 +125,6 @@ def _rename_by_alias(df: pd.DataFrame) -> pd.DataFrame:
 
     Tooltip: Utilize VARIAVEL_DESCRICAO[<coluna>] para exibir explicação em interfaces.
     """
-    """
-    Renomeia colunas do DataFrame para nomes canônicos, usando o dicionário ALIASES.
-    Isso garante padronização para processamento posterior, independentemente do layout original.
     rename = {}
     norm_lookup = {_normcol(c): c for c in df.columns}
     for canon, variants in ALIASES.items():
@@ -248,9 +257,6 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
 
     Tooltip: As colunas resultantes podem ser explicadas via VARIAVEL_DESCRICAO.
     """
-    """
-    Converte DataFrame de formato wide (colunas por faixa etária/sexo) para formato long.
-    Essencial para análises de pirâmide etária e cálculo de indicadores demográficos.
     if "SITUACAO" not in df_wide.columns and "CD_SITUACAO" in df_wide.columns:
         df_wide = df_wide.copy()
         df_wide["SITUACAO"] = df_wide["CD_SITUACAO"].apply(_derive_macro_from_cd)
@@ -261,8 +267,6 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     geo_keys = ["CD_SETOR","CD_MUN","NM_MUN","CD_UF","NM_UF","CD_SITUACAO","SITUACAO","SITUACAO_DET_TXT","CD_TIPO","TP_SETOR_TXT","V0001"]
     id_vars = [c for c in geo_keys if c in df_wide.columns]
     long = df_wide.melt(id_vars=id_vars, value_vars=val_cols, var_name="chave", value_name="valor")
-    long["valor"] = pd.to_numeric(long["valor"], errors="coerce")
-    if long["valor"].isnull().any():
     long["valor"] = pd.to_numeric(long["valor"], errors="coerce").fillna(0).astype("int64")
     def parse_key(k: str):
         s = str(k).strip()
@@ -313,3 +317,7 @@ def aggregate_pyramid(df: pd.DataFrame, group_by: Sequence[str] | None = None) -
                   .sort_values(keys)
                   .reset_index(drop=True))
     return out
+
+
+# Importar função de processamento demográfico para compatibilidade
+from .demografia_processing import merge_rm_au_from_excel

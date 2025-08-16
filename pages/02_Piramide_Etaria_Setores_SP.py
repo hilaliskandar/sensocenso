@@ -10,8 +10,7 @@ import re
 
 from censo_app.transform import (
     load_sp_age_sex_enriched, wide_to_long_pyramid, aggregate_pyramid,
-    merge_rm_au_from_excel, VAR_ALIAS, SITUACAO_MAP, TIPO_MAP
-    load_sp_age_sex_enriched, wide_to_long_pyramid, aggregate_pyramid
+    merge_rm_au_from_excel, SITUACAO_MAP, TIPO_MAP
 )
 from censo_app.viz import make_age_pyramid
 
