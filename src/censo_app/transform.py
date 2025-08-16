@@ -70,6 +70,18 @@ TIPO_MAP: Dict[int, str] = {
     9: "Agrupamento quilombola",
 }
 
+# Mapa para situação macro do setor (baseado em _derive_macro_from_cd)
+SITUACAO_MAP: Dict[int, str] = {
+    1: "Urbana",
+    2: "Urbana", 
+    3: "Urbana",
+    5: "Rural",
+    6: "Rural",
+    7: "Rural",
+    8: "Rural",
+    9: "Rural",
+}
+
 
 # Faixas etárias padrão para pirâmides etárias e indicadores demográficos
 AGE_GROUPS = [
@@ -305,3 +317,7 @@ def aggregate_pyramid(df: pd.DataFrame, group_by: Sequence[str] | None = None) -
                   .sort_values(keys)
                   .reset_index(drop=True))
     return out
+
+
+# Importar função de processamento demográfico para compatibilidade
+from .demografia_processing import merge_rm_au_from_excel
