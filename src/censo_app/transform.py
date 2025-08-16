@@ -41,9 +41,25 @@ VARIAVEL_DESCRICAO = {
     "TP_SETOR_TXT": "Descrição do tipo de setor censitário.",
     "SITUACAO": "Situação macro do setor: Urbana (1,2,3) ou Rural (demais).",
     "V0001": "Total de pessoas residentes no setor (população declarada).",
+    "CD_RM": "Código da Região Metropolitana.",
+    "NM_RM": "Nome da Região Metropolitana.",
+    "LABEL_RM": "Rótulo da Região Metropolitana.",
+    "CD_AU": "Código da Aglomeração Urbana.", 
+    "NM_AU": "Nome da Aglomeração Urbana.",
+    "LABEL_AU": "Rótulo da Aglomeração Urbana.",
     "idade_grupo": "Faixa etária agrupada (ex: 0 a 4 anos, 5 a 9 anos, ...).",
     "sexo": "Sexo da população (Masculino, Feminino, Total).",
     "valor": "Valor absoluto da população para o grupo/sexo/faixa etária.",
+    # Indicadores demográficos
+    "RDT": "Razão de Dependência Total (%): (pop_0_14 + pop_65p) / pop_15_64 * 100",
+    "RDJ": "Razão de Dependência Jovem (%): pop_0_14 / pop_15_64 * 100",
+    "RDI": "Razão de Dependência de Idosos (%): pop_65p / pop_15_64 * 100",
+    "OADR": "Old Age Dependency Ratio (%): pop_65p / pop_20_64 * 100",
+    "PSR": "Potential Support Ratio: pop_20_64 / pop_65p",
+    "IE_60p": "Índice de Envelhecimento 60+ (%): pop_60p / pop_0_14 * 100",
+    "IE_65p": "Índice de Envelhecimento 65+ (%): pop_65p / pop_0_14 * 100",
+    "Prop_80p": "Proporção de 80+ anos (%): pop_80p / pop_total * 100",
+    "TBN_proxy": "Taxa Bruta de Natalidade (proxy, ‰): pop_idade0 / pop_total * 1000",
 }
 
 # Dicionários oficiais para decodificação de variáveis categóricas do setor censitário
@@ -113,9 +129,6 @@ def _rename_by_alias(df: pd.DataFrame) -> pd.DataFrame:
 
     Tooltip: Utilize VARIAVEL_DESCRICAO[<coluna>] para exibir explicação em interfaces.
     """
-    """
-    Renomeia colunas do DataFrame para nomes canônicos, usando o dicionário ALIASES.
-    Isso garante padronização para processamento posterior, independentemente do layout original.
     rename = {}
     norm_lookup = {_normcol(c): c for c in df.columns}
     for canon, variants in ALIASES.items():
@@ -248,9 +261,6 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
 
     Tooltip: As colunas resultantes podem ser explicadas via VARIAVEL_DESCRICAO.
     """
-    """
-    Converte DataFrame de formato wide (colunas por faixa etária/sexo) para formato long.
-    Essencial para análises de pirâmide etária e cálculo de indicadores demográficos.
     if "SITUACAO" not in df_wide.columns and "CD_SITUACAO" in df_wide.columns:
         df_wide = df_wide.copy()
         df_wide["SITUACAO"] = df_wide["CD_SITUACAO"].apply(_derive_macro_from_cd)
@@ -263,7 +273,7 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     long = df_wide.melt(id_vars=id_vars, value_vars=val_cols, var_name="chave", value_name="valor")
     long["valor"] = pd.to_numeric(long["valor"], errors="coerce")
     if long["valor"].isnull().any():
-    long["valor"] = pd.to_numeric(long["valor"], errors="coerce").fillna(0).astype("int64")
+        long["valor"] = pd.to_numeric(long["valor"], errors="coerce").fillna(0).astype("int64")
     def parse_key(k: str):
         s = str(k).strip()
         if s.lower().startswith("sexo masculino"):
@@ -289,6 +299,57 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     long["idade_grupo"] = pd.Categorical(long["idade_grupo"], categories=AGE_GROUPS, ordered=True)
     keep = [c for c in ["CD_SETOR","CD_MUN","NM_MUN","CD_UF","NM_UF","CD_SITUACAO","SITUACAO","SITUACAO_DET_TXT","CD_TIPO","TP_SETOR_TXT","V0001","idade_grupo","sexo","valor"] if c in long.columns]
     return long[keep]
+
+
+def merge_rm_au_from_excel(df: pd.DataFrame, excel_path: str) -> pd.DataFrame:
+    """
+    Mescla dados de Região Metropolitana/Aglomeração Urbana a partir de arquivo Excel.
+    
+    Parâmetros:
+        df (pd.DataFrame): DataFrame com dados do censo (deve ter coluna CD_MUN).
+        excel_path (str): Caminho para o arquivo Excel com dados de RM/AU.
+        
+    Retorna:
+        pd.DataFrame: DataFrame original com colunas adicionais de RM/AU.
+    """
+    import pandas as pd
+    
+    try:
+        # Lê o arquivo Excel com dados de RM/AU
+        excel_df = pd.read_excel(excel_path)
+        
+        # Padroniza coluna de código do município
+        if 'COD_MUN' in excel_df.columns:
+            excel_df['CD_MUN'] = pd.to_numeric(excel_df['COD_MUN'], errors='coerce')
+        
+        # Seleciona colunas relevantes para merge
+        merge_cols = ['CD_MUN']
+        for col in ['COD_RECMETROPOL', 'NOME_RECMETROPOL', 'LABEL_RECMETROPOL', 
+                    'COD_CATMETROPOL', 'NOME_CATMETROPOL', 'LABEL_CATMETROPOL']:
+            if col in excel_df.columns:
+                merge_cols.append(col)
+        
+        excel_subset = excel_df[merge_cols].drop_duplicates()
+        
+        # Renomeia colunas para padrão RM/AU
+        rename_mapping = {
+            'COD_RECMETROPOL': 'CD_RM',
+            'NOME_RECMETROPOL': 'NM_RM', 
+            'LABEL_RECMETROPOL': 'LABEL_RM',
+            'COD_CATMETROPOL': 'CD_AU',
+            'NOME_CATMETROPOL': 'NM_AU',
+            'LABEL_CATMETROPOL': 'LABEL_AU'
+        }
+        excel_subset = excel_subset.rename(columns=rename_mapping)
+        
+        # Faz o merge
+        result = df.merge(excel_subset, on='CD_MUN', how='left')
+        
+        return result
+        
+    except Exception as e:
+        print(f"Erro ao mesclar dados RM/AU: {e}")
+        return df
 
 
 def aggregate_pyramid(df: pd.DataFrame, group_by: Sequence[str] | None = None) -> pd.DataFrame:

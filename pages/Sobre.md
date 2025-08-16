@@ -125,6 +125,43 @@ Esta seção apresenta um guia prático sobre quais variáveis do Censo 2022 uti
 
 ---
 
+## Documentação Avançada e Arquivos de Referência
+
+### Documentação Técnica Detalhada
+
+Para informações completas sobre indicadores demográficos, estrutura de dados e implementação:
+
+📖 **[Documentação Avançada: Indicadores Demográficos e Fluxo do App](docs/Documentacao_Avancada_Indicadores.md)**
+
+### Arquivos de Suporte
+
+📊 **[Guia dos Indicadores Demográficos IBGE 2022 (Excel)](docs/Guia_Indicadores_Demograficos_IBGE2022.xlsx)**
+- Definições detalhadas de cada indicador
+- Fórmulas com exemplos numéricos  
+- Benchmarks internacionais
+- Metodologia de cálculo do IBGE
+
+📋 **[Schema de Entrada - Idade Simples (CSV)](docs/schema_entrada_idade_simples.csv)**
+- Estrutura esperada dos dados de entrada
+- Tipos de dados e validações
+- Campos obrigatórios e opcionais
+- Exemplos práticos
+
+### Funcionalidades Avançadas
+
+✨ **Nova Página Demografia (v2.0)**
+- Análise populacional multi-nível (Estado → Setor)
+- Filtros inteligentes com padrões otimizados
+- Integração RM/AU automática
+- Indicadores demográficos em tempo real
+- Exportação de dados e indicadores
+
+🔧 **Funcionalidade Dual-Source**
+- Suporte a Parquet local e MotherDuck
+- Cache inteligente para performance
+- Validação automática de qualidade
+- Pipeline otimizado de processamento
+
 ## Links úteis e Notas Técnicas do IBGE
 
 - Portal do Censo 2022 IBGE: https://www.ibge.gov.br/estatisticas/sociais/populacao/22827-censo-demografico-2022.html
