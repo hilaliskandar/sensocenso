@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Optional, Dict, Sequence
+from functools import lru_cache
+import os
 import re, unicodedata
 import pandas as pd
 from pathlib import Path as _P
@@ -175,59 +177,157 @@ def _normalize_simple(s: str) -> str:
     s = "".join(c for c in s if not unicodedata.combining(c))
     return s
 
+def _norm_cd_mun(series: pd.Series) -> pd.Series:
+    """Normaliza códigos de município para 7 dígitos (string de números)."""
+    return pd.Series(series).astype(str).str.replace(r"\D", "", regex=True).str.zfill(7)
+
+def _file_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except Exception:
+        return 0.0
+
+@lru_cache(maxsize=8)
+def _rm_au_lookup_from_excel_cached(excel_path: str, mtime: float) -> Tuple[Optional[Dict[str, str]], Optional[Dict[str, str]]]:
+    """Carrega mapas RM/AU do Excel, cacheado por caminho+mtime.
+
+    Retorna tupla (rm_map_dict, au_map_dict) mapeando CD_MUN -> nome.
+    """
+    try:
+        xls = pd.ExcelFile(excel_path, engine="openpyxl")
+    except Exception:
+        return None, None
+
+    def _exact_map(sheet_name: str, value_col_name: str) -> Optional[Dict[str, str]]:
+        if sheet_name not in xls.sheet_names:
+            return None
+        try:
+            tmp = pd.read_excel(xls, sheet_name=sheet_name)
+        except Exception:
+            return None
+        cols = {str(c).strip(): c for c in tmp.columns}
+        inv = { _normalize_simple(k).upper(): v for k, v in cols.items() }
+        get = lambda k: inv.get(_normalize_simple(k).upper())
+        cod = get("COD_MUN")
+        nom = get("NOME_CATMETROPOL")
+        uf  = get("SIGLA_UF")
+        if not (cod and nom and uf):
+            return None
+        tmp = tmp[[cod, nom, uf]].copy()
+        tmp = tmp[tmp[uf].astype(str).str.upper().eq("SP")]
+        if tmp.empty:
+            return None
+        tmp["CD_MUN"] = _norm_cd_mun(tmp[cod])
+        tmp = tmp[["CD_MUN", nom]].dropna().drop_duplicates()
+        return dict(zip(tmp["CD_MUN"], tmp[nom]))
+
+    rm_map = _exact_map("Composição - Recortes Metropoli", "RM_NOME")
+    au_map = _exact_map("Composição - Aglomerações Urban", "AU_NOME")
+
+    # Fallback heurístico se preciso
+    if rm_map is None or au_map is None:
+        try:
+            norm = lambda s: _normalize_simple(s).lower()
+            rm_sheet = None
+            au_sheet = None
+            for name in xls.sheet_names:
+                n = norm(name)
+                if "metrop" in n and ("composicao" in n or "composi" in n):
+                    rm_sheet = name
+                if "aglomer" in n and ("urban" in n or "urbana" in n or "urbanas" in n):
+                    au_sheet = name
+            rm_sheet = rm_sheet or "Composição - Recortes Metropoli"
+            au_sheet = au_sheet or "Composição - Aglomerações Urban"
+            rm_df = pd.read_excel(xls, sheet_name=rm_sheet)
+            au_df = pd.read_excel(xls, sheet_name=au_sheet)
+            # tentar detectar colunas
+            def build_map(d: pd.DataFrame, name_candidates: List[str]) -> Optional[Dict[str, str]]:
+                d = d.copy()
+                d.columns = [_normcol(c) for c in d.columns]
+                if "COD_MUN" not in d.columns:
+                    # tenta CODIGO_DO_MUNICIPIO etc
+                    for c in list(d.columns):
+                        if c in {"CODIGO_DO_MUNICIPIO","COD_MUNICIPIO","CD_GEOCODM","CD_MUN","COD_MUN"}:
+                            d.rename(columns={c: "COD_MUN"}, inplace=True)
+                            break
+                nom_col = next((c for c in name_candidates if c in d.columns), None)
+                if "COD_MUN" not in d.columns or nom_col is None:
+                    return None
+                d["CD_MUN"] = _norm_cd_mun(d["COD_MUN"])
+                d = d[["CD_MUN", nom_col]].dropna().drop_duplicates()
+                return dict(zip(d["CD_MUN"], d[nom_col]))
+            if rm_map is None:
+                rm_map = build_map(rm_df, ["NOME_CATMETROPOL","RM_NOME","RM","NOME_RM"])
+            if au_map is None:
+                au_map = build_map(au_df, ["NOME_CATAU","AU_NOME","AU","NOME_AU"])
+        except Exception:
+            pass
+
+    return rm_map, au_map
+
+def enrich_with_municipality_lookup(df: pd.DataFrame, mapping: Dict[str, str], new_col: str,
+                                    source_col: str = "CD_MUN", overwrite: bool = False) -> pd.DataFrame:
+    """Enriquece df mapeando códigos de município para um novo rótulo.
+
+    - mapping: dict CD_MUN (7 dígitos) -> valor
+    - new_col: coluna a ser criada/preenchida
+    - overwrite: se False (padrão), só preenche valores ausentes
+    """
+    if not mapping or source_col not in df.columns:
+        return df
+    out = df.copy()
+    out[source_col] = _norm_cd_mun(out[source_col])
+    mapped = out[source_col].map(mapping)
+    if overwrite or new_col not in out.columns:
+        out[new_col] = mapped
+    else:
+        out[new_col] = out[new_col].where(out[new_col].notna(), mapped)
+    return out
+
 def _merge_rm_au(df: pd.DataFrame, excel_path: str = "insumos/Composicao_RM_2024.xlsx") -> pd.DataFrame:
+    """Enriquece o DataFrame com nomes de RM/AU com base no Excel fornecido.
+
+    Regras prioritárias (exatas) conforme especificação:
+    - Ler as abas:
+        • "Composição - Aglomerações Urban" (AU)
+        • "Composição - Recortes Metropoli" (RM)
+    - Usar as colunas: COD_MUN, NOME_CATMETROPOL, SIGLA_UF
+    - Filtrar apenas SIGLA_UF == "SP"
+    - Produzir mapas: CD_MUN -> AU_NOME / RM_NOME
+
+    Caso as abas/colunas exatas não existam, faz fallback heurístico anterior.
+    Também cria coluna auxiliar REGIAO_RM_AU (prioriza RM, senão AU).
+    """
     p = _P(excel_path)
     if not p.exists():
         return df
-    try:
-        xls = pd.ExcelFile(p.as_posix(), engine="openpyxl")
-    except Exception:
-        return df
-    # robust sheet detection
-    norm = lambda s: _normalize_simple(s).lower()
-    rm_sheet = None
-    au_sheet = None
-    for name in xls.sheet_names:
-        n = norm(name)
-        if "metrop" in n and ("composicao" in n or "composi" in n):
-            rm_sheet = name
-        if "aglomer" in n and ("urban" in n or "urbana" in n or "urbanas" in n):
-            au_sheet = name
-    rm_sheet = rm_sheet or "Composição - Recortes Metropoli"
-    au_sheet = au_sheet or "Composição - Aglomerações Urban"
-    try:
-        rm = pd.read_excel(xls, sheet_name=rm_sheet)
-        au = pd.read_excel(xls, sheet_name=au_sheet)
-    except Exception:
-        return df
-    # normalize column names inside the Excel sheets
-    rm = _rename_by_alias(rm)
-    au = _rename_by_alias(au)
-    # try common fallbacks
-    # ensure COD_MUN exists; sometimes it's COD_MUN or COD_MUNICIPIO
-    for d in (rm, au):
-        if "COD_MUN" not in d.columns:
-            for c in d.columns:
-                if _normcol(c) in {"COD_MUN","CODIGO_DO_MUNICIPIO","COD_MUNICIPIO"}:
-                    d.rename(columns={c:"COD_MUN"}, inplace=True)
-                    break
-        if "COD_MUN" in d.columns:
-            d["COD_MUN"] = d["COD_MUN"].astype(str).str.extract(r"(\d+)")[0]
     out = df.copy()
-    if "CD_MUN" in out.columns:
-        out["CD_MUN"] = out["CD_MUN"].astype(str).str.extract(r"(\d+)")[0]
-        if "COD_MUN" in rm.columns and ("NOME_CATMETROPOL" in rm.columns or "RM_NOME" in rm.columns):
-            src = "NOME_CATMETROPOL" if "NOME_CATMETROPOL" in rm.columns else "RM_NOME"
-            rm_map = rm[["COD_MUN", src]].dropna().drop_duplicates()
-            rm_map.rename(columns={src:"RM_NOME"}, inplace=True)
-            out = out.merge(rm_map, left_on="CD_MUN", right_on="COD_MUN", how="left")
-            out.drop(columns=[c for c in ["COD_MUN"] if c in out.columns], inplace=True)
-        if "COD_MUN" in au.columns and ("NOME_CATAU" in au.columns or "AU_NOME" in au.columns):
-            srca = "NOME_CATAU" if "NOME_CATAU" in au.columns else "AU_NOME"
-            au_map = au[["COD_MUN", srca]].dropna().drop_duplicates()
-            au_map.rename(columns={srca:"AU_NOME"}, inplace=True)
-            out = out.merge(au_map, left_on="CD_MUN", right_on="COD_MUN", how="left")
-            out.drop(columns=[c for c in ["COD_MUN"] if c in out.columns], inplace=True)
+    if "CD_MUN" not in out.columns:
+        return out
+    out["CD_MUN"] = _norm_cd_mun(out["CD_MUN"])
+
+    rm_map, au_map = _rm_au_lookup_from_excel_cached(p.as_posix(), _file_mtime(p.as_posix()))
+    if rm_map:
+        out = enrich_with_municipality_lookup(out, rm_map, new_col="RM_NOME", source_col="CD_MUN", overwrite=False)
+    if au_map:
+        out = enrich_with_municipality_lookup(out, au_map, new_col="AU_NOME", source_col="CD_MUN", overwrite=False)
+
+    if "REGIAO_RM_AU" not in out.columns:
+        out["REGIAO_RM_AU"] = out.get("RM_NOME")
+        if "AU_NOME" in out.columns:
+            out["REGIAO_RM_AU"] = out["REGIAO_RM_AU"].where(out["REGIAO_RM_AU"].notna(), out["AU_NOME"])
+    # Tipo da região (RM tem prioridade sobre AU)
+    if "TIPO_RM_AU" not in out.columns:
+        import pandas as _pd
+        tipo = _pd.Series(_pd.NA, index=out.index, dtype="object")
+        if "RM_NOME" in out.columns:
+            tipo = tipo.where(~out["RM_NOME"].notna(), "RM")
+        if "AU_NOME" in out.columns:
+            tipo = tipo.where(~(tipo.isna() & out["AU_NOME"].notna()), "AU")
+        out["TIPO_RM_AU"] = tipo
+    # Alias opcional com nome mais explícito
+    if "NOME_RM_AU" not in out.columns and "REGIAO_RM_AU" in out.columns:
+        out["NOME_RM_AU"] = out["REGIAO_RM_AU"]
     return out
 
 def _pick_exact_age_cols(columns: List[str]) -> Tuple[List[str], List[str]]:
@@ -280,7 +380,12 @@ def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
     val_cols = m_cols + f_cols
     if not val_cols:
         raise ValueError("As colunas etárias esperadas (11 por sexo) não foram encontradas.")
-    geo_keys = ["CD_SETOR","CD_MUN","NM_MUN","CD_UF","NM_UF","CD_SITUACAO","SITUACAO","SITUACAO_DET_TXT","CD_TIPO","TP_SETOR_TXT","V0001","RM_NOME","AU_NOME","NM_RGINT","NM_RGI"]
+    geo_keys = [
+        "CD_SETOR","CD_MUN","NM_MUN","CD_UF","NM_UF",
+        "CD_SITUACAO","SITUACAO","SITUACAO_DET_TXT","CD_TIPO","TP_SETOR_TXT","V0001",
+        "RM_NOME","AU_NOME","NM_RGINT","NM_RGI",
+        "NOME_RM_AU","TIPO_RM_AU","REGIAO_RM_AU",
+    ]
     id_vars = [c for c in geo_keys if c in df_wide.columns]
     long = df_wide.melt(id_vars=id_vars, value_vars=val_cols, var_name="chave", value_name="valor")
     long["valor"] = pd.to_numeric(long["valor"], errors="coerce").fillna(0).astype("int64")
