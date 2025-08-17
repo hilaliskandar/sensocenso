@@ -2,6 +2,21 @@
 
 Plataforma Streamlit enxuta para análise demográfica (pirâmide etária) por município e por setor censitário, baseada no Parquet local do Censo 2022 de SP.
 
+## Sumário / Table of Contents
+
+- Idioma / Language: [Português](#censo-2022--plataforma-sp-v193) · [English](#censo-2022--sp-platform-english)
+- [Como rodar (Windows/PowerShell)](#como-rodar-windowspowershell)
+- [Parquet esperado](#parquet-esperado)
+- [Recursos](#recursos)
+- [Erros comuns (Windows)](#erros-comuns-windows)
+- [Algoritmo de ponta a ponta (Demografia)](#algoritmo-de-ponta-a-ponta-demografia)
+	- [Visão geral (fluxo)](#visão-geral-fluxo)
+	- [Segundo diagrama — Tabela ABNT](#segundo-diagrama--tabela-abnt-pipeline-e-cálculos)
+- [Censo 2022 — SP Platform (English)](#censo-2022--sp-platform-english)
+	- [How to run (Windows/PowerShell)](#how-to-run-windowspowershell)
+	- [Common issues (Windows)](#common-issues-windows)
+	- [End-to-end algorithm (Demography)](#end-to-end-algorithm-demography)
+
 ## Como rodar (Windows/PowerShell)
 
 1) Pré-requisitos
