@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
+# Default color palette fallback for charts
+DEFAULT_PALETTE = px.colors.qualitative.Set3
+
 AGE_ORDER_10 = [
     "0 a 4 anos","5 a 9 anos","10 a 14 anos","15 a 19 anos",
     "20 a 24 anos","25 a 29 anos","30 a 39 anos","40 a 49 anos",
@@ -76,6 +79,7 @@ def make_pie_chart(df, categoria_col: str = "categoria", valor_col: str = "valor
         values=valor_col,
         hole=0.0,
         labels={categoria_col: "Categorias", valor_col: "Valor"},
+    color_discrete_sequence=DEFAULT_PALETTE,
     )
     if titulo:
         fig.update_layout(title_text=titulo, title_x=0.5)
@@ -92,6 +96,7 @@ def make_bar_chart(df, categoria_col: str = "categoria", valor_col: str = "valor
         orientation='h',
         category_orders={categoria_col: order},
         labels={categoria_col: "Categorias", valor_col: "Valor"},
+    color_discrete_sequence=DEFAULT_PALETTE,
     )
     if titulo:
         fig.update_layout(title_text=titulo, title_x=0.5)

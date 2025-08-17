@@ -12,33 +12,13 @@ from censo_app.transform import (
     categorias_para_percentual,
 )
 from censo_app.viz import construir_grafico_pizza, construir_grafico_barra
+from censo_app.labels import apply_simplify_and_wrap as _apply_labels
+from censo_app.ui_utils import ensure_abnt_css, dataframe_to_csv_download
 
 st.set_page_config(page_title="Domicílios", layout="wide", initial_sidebar_state="collapsed")
 
 # CSS: legendas ABNT com altura uniforme e quebra de linha
-st.markdown(
-    """
-    <style>
-    .abnt-figure { max-width: 100%; margin: 0.25rem 0 0.25rem 0; }
-    .abnt-caption {
-        text-align: center;
-        font-weight: 700;
-        font-size: 11pt;
-        line-height: 1.2;
-        height: 64px; /* ~2 linhas visíveis */
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 4px 8px;
-        white-space: normal;
-        word-break: break-word;
-        overflow-wrap: anywhere;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+ensure_abnt_css(height_caption_px=64)
 
 SETTINGS = get_settings()
 
@@ -223,11 +203,19 @@ def carregar_df():
 
 @st.cache_data(show_spinner=False)
 def ler_grupos():
-    import yaml
-    p = Path("config/categorias.yaml")
-    with p.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    return cfg
+    """Carrega configuração de grupos (se existir). Retorna dict vazio se ausente/erro."""
+    try:
+        import yaml
+        p = Path("config/categorias.yaml")
+        if not p.exists():
+            return {}
+        with p.open("r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        if not isinstance(cfg, dict):
+            return {}
+        return cfg
+    except Exception:
+        return {}
 
 def _fmt_mun(cd: str|None, lookup: pd.DataFrame):
     if not cd:
@@ -358,8 +346,8 @@ for grupo in grupos:
     except Exception:
         pass
     # Simplificar rótulos (remove raiz do título) e aplicar wrap
-    base_comp = _apply_simplify_and_wrap(base_comp, titulo, width=18)
-    base_sel = _apply_simplify_and_wrap(base_sel, titulo, width=18)
+    base_comp = _apply_labels(base_comp, titulo, width=18)
+    base_sel = _apply_labels(base_sel, titulo, width=18)
     if palette:
         # aplicar rotação de cores para manter consistência
         import itertools
@@ -392,14 +380,14 @@ for grupo in grupos:
                 st.plotly_chart(fig2, use_container_width=True, key=f"dom_{grupo.get('id', titulo)}_sel")
                 st.caption("Fonte: Elaboração própria com dados do Censo Demográfico 2022 (IBGE).")
                 # download CSV (Seleção)
-                csv2 = (
-                    base_sel.rename(columns={"categoria_simplificada":"Categoria","valor":"Valor"})
-                    [["Categoria","Valor"]]
-                    .to_csv(index=False)
-                    .encode("utf-8-sig")
-                )
                 fname2 = f"selecionado_{titulo.replace(' ', '_')}.csv".replace('—','_').replace('–','-')
-                st.download_button("Baixar CSV (Selecionado)", data=csv2, file_name=fname2, mime="text/csv")
+                dataframe_to_csv_download(
+                    base_sel,
+                    file_name=fname2,
+                    label="Baixar CSV (Selecionado)",
+                    rename={"categoria_simplificada":"Categoria","valor":"Valor"},
+                    columns=["Categoria","Valor"],
+                )
         with c2:
             if not base_comp.empty:
                 # Legenda ABNT com altura fixa (multilinha)
@@ -427,14 +415,14 @@ for grupo in grupos:
                 st.plotly_chart(fig, use_container_width=True, key=f"dom_{grupo.get('id', titulo)}_estado")
                 st.caption("Fonte: Elaboração própria com dados do Censo Demográfico 2022 (IBGE).")
                 # download CSV (Comparador)
-                csv1 = (
-                    base_comp.rename(columns={"categoria_simplificada":"Categoria","valor":"Valor"})
-                    [["Categoria","Valor"]]
-                    .to_csv(index=False)
-                    .encode("utf-8-sig")
-                )
                 fname1 = f"comparador_{titulo.replace(' ', '_')}.csv".replace('—','_').replace('–','-')
-                st.download_button("Baixar CSV (Comparador)", data=csv1, file_name=fname1, mime="text/csv")
+                dataframe_to_csv_download(
+                    base_comp,
+                    file_name=fname1,
+                    label="Baixar CSV (Comparador)",
+                    rename={"categoria_simplificada":"Categoria","valor":"Valor"},
+                    columns=["Categoria","Valor"],
+                )
 
         # Tabela por grupo — apenas Município (sem comparativo)
         try:
@@ -498,14 +486,14 @@ for grupo in grupos:
                         st.plotly_chart(f3, use_container_width=True, key=f"dom_{grupo.get('id', titulo)}_sib_{ix}")
                         st.caption("Fonte: Elaboração própria com dados do Censo Demográfico 2022 (IBGE).")
                         # download
-                        csv3 = (
-                            df_tmp.rename(columns={"categoria_simplificada":"Categoria","valor":"Valor"})
-                            [["Categoria","Valor"]]
-                            .to_csv(index=False)
-                            .encode("utf-8-sig")
-                        )
                         fname3 = f"{title2.replace(' ', '_')}.csv".replace('—','_').replace('–','-')
-                        st.download_button("Baixar CSV", data=csv3, file_name=fname3, mime="text/csv")
+                        dataframe_to_csv_download(
+                            df_tmp,
+                            file_name=fname3,
+                            label="Baixar CSV",
+                            rename={"categoria_simplificada":"Categoria","valor":"Valor"},
+                            columns=["Categoria","Valor"],
+                        )
                 fig_list.append(f"Comparação por tipo — {titulo} ({title_suffix})")
 
 st.markdown("---")

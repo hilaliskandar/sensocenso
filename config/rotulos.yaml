@@ -1,5 +1,5 @@
 # Configuração de regras de rótulos (página Domicílios e correlatas)
 wrap_width_default: 18
-banheiro_regex: "^\s*(\n{1,2}\+?)\s+banheiros?\s+de\s+uso\s+exclusivo\s+com\s+chuveiro\s+e\s+vaso\s+sanit[áa]rio\s+(?:existentes\s+no\s+domic[ií]lio)?\s*$"
-esgoto_inexistente_pattern: "^(?:Domicílios\s+Particulares\s+Permanentes\s+Ocupados,\s*)?Destina[cç][aã]o\s+do\s+esgoto\s+inexistente,\s*pois\s+n[aã]o\s+tinham\s+banheiro\s+nem\s+sanit[áa]rio\.?$"
-esgoto_prefix_pattern: "^(?:Domicílios\s+Particulares\s+Permanentes\s+Ocupados,\s*)?Destina[cç][aã]o\s+do\s+esgoto\s+do\s+banheiro\s+ou\s+sanit[áa]rio\s+ou\s+buraco\s+para\s+deje[cç][oõ]es\s*(?:é\s*)"
+banheiro_regex: "^\\s*((?:\\d{1,2}|\\d{1,2}\\+))\\s+banheiros?\\s+de\\s+uso\\s+exclusivo\\s+com\\s+chuveiro\\s+e\\s+vaso\\s+sanit[áa]rio\\s+(?:existentes\\s+no\\s+domic[ií]lio)?\\s*$"
+esgoto_inexistente_pattern: "^(?:Domicílios\\s+Particulares\\s+Permanentes\\s+Ocupados,\\s*)?Destina[cç][aã]o\\s+do\\s+esgoto\\s+inexistente,\\s*pois\\s+n[aã]o\\s+tinham\\s+banheiro\\s+nem\\s+sanit[áa]rio\\.?$"
+esgoto_prefix_pattern: "^(?:Domicílios\\s+Particulares\\s+Permanentes\\s+Ocupados,\\s*)?Destina[cç][aã]o\\s+do\\s+esgoto\\s+do\\s+banheiro\\s+ou\\s+sanit[áa]rio\\s+ou\\s+buraco\\s+para\\s+deje[cç][oõ]es\\s*(?:é\\s*)"

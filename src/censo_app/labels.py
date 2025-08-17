@@ -84,6 +84,9 @@ def strip_known_boilerplate(s: str) -> str:
             return "sem banheiro nem sanitário"
         patt_prefix = cfg.get("esgoto_prefix_pattern") or r"^(?:Domicílios\s+Particulares\s+Permanentes\s+Ocupados,\s*)?Destina[cç][aã]o\s+do\s+esgoto\s+do\s+banheiro\s+ou\s+sanit[áa]rio\s+ou\s+buraco\s+para\s+deje[cç][oõ]es\s*(?:é\s*)"
         out = re.sub(patt_prefix, "", out, flags=re.IGNORECASE)
+        # Lixo: remover prefixos repetitivos como "Destinação do lixo do domicílio é"
+        patt_lixo = cfg.get("lixo_prefix_pattern") or r"^(?:Domicílios\s+Particulares\s+Permanentes\s+Ocupados,\s*)?Destina[cç][aã]o\s+do\s+lixo(?:\s+do\s+domic[ií]lio)?\s*(?:é\s*)"
+        out = re.sub(patt_lixo, "", out, flags=re.IGNORECASE)
     except Exception:
         pass
     out = re.sub(r"_(\d+)\s*$", "", out)
@@ -91,10 +94,24 @@ def strip_known_boilerplate(s: str) -> str:
     out = re.sub(r"\s+no\s+domic[ií]lio\s*$", "", out, flags=re.IGNORECASE)
     out = re.sub(r"^Tipo\s+de\s+esp[eé]cie\s+é\s+", "", out, flags=re.IGNORECASE)
     out = re.sub(r"\b(\d{1,2})\s+ou\s+mais\b", r"\1+", out, flags=re.IGNORECASE)
-    pattern_banheiro = cfg.get("banheiro_regex") or r"^\s*(\d{1,2}\+?)\s+banheiros?\s+de\s+uso\s+exclusivo\s+com\s+chuveiro\s+e\s+vaso\s+sanit[áa]rio\s+(?:existentes\s+no\s+domic[ií]lio)?\s*$"
+    # Default tolerant regex: handle accents and mojibake (e.g., sanitÃ¡rio/domÃ­cilio)
+    pattern_banheiro = (
+        cfg.get("banheiro_regex")
+        or r"^\s*((?:\d{1,2}|\d{1,2}\+))\s+banheiros?\s+de\s+uso\s+exclusivo\s+com\s+chuveiro\s+e\s+vaso\s+sanit\w+\s+(?:existentes\s+no\s+domic\w+)?\s*$"
+    )
+    # Try configured pattern first
     m = re.compile(pattern_banheiro, flags=re.IGNORECASE).match(out)
     if m:
         return m.group(1)
+    # Fallback: tolerant default pattern (handles mojibake and variants)
+    _tolerant = r"^\s*((?:\d{1,2}|\d{1,2}\+))\s+banheiros?\s+de\s+uso\s+exclusivo\s+com\s+chuveiro\s+e\s+vaso\s+sanit\w+\s+(?:existentes\s+no\s+domic\w+)?\s*$"
+    m2 = re.compile(_tolerant, flags=re.IGNORECASE).match(out)
+    if m2:
+        return m2.group(1)
+    # Last resort: if line starts with "<num> banheiros" just return the number
+    m3 = re.compile(r"^\s*(\d{1,2}\+?)\s+banheiros?\b", flags=re.IGNORECASE).match(out)
+    if m3:
+        return m3.group(1)
     out = re.sub(r"\s{2,}", " ", out).strip()
     return out
 
@@ -116,13 +133,37 @@ def simplify_label_by_roots(label: str, roots: list[str]) -> str:
 
 
 def apply_simplify_and_wrap(df: pd.DataFrame, title: str, width: int | None = None) -> pd.DataFrame:
+    """Simplifica rótulos com base no título e padrões configurados, depois aplica quebra de linha.
+
+    Regras adicionais:
+    - Considera também o prefixo dominante das categorias (antes da primeira vírgula) como possível raiz a remover.
+    - Inclui raízes extras recorrentes em domicílios (DPPO/DPIO/DCCM) para reduzir duplicações.
+    """
     if df is None or df.empty:
         return df
-    roots = extract_root_from_title(title)
     out = df.copy()
     src_col = "categoria" if "categoria" in out.columns else out.columns[0]
+
+    # Candidatos a raiz: do título, do prefixo dominante e extras comuns
+    roots = extract_root_from_title(title)
+    try:
+        dom_prefix = dominant_label_prefix(out[src_col])
+        if dom_prefix:
+            roots = list(roots) + [dom_prefix]
+    except Exception:
+        pass
+    extra_roots = [
+        "Domicílios Particulares Permanentes Ocupados",
+        "Domicílios Particulares Improvisados Ocupados",
+        "Unidades de Habitação em Domicílios Coletivos Com Morador",
+    ]
+    for er in extra_roots:
+        if er not in roots:
+            roots.append(er)
+
     out["categoria_simplificada"] = (
-        out[src_col].astype(str)
+        out[src_col]
+        .astype(str)
         .apply(strip_known_boilerplate)
         .apply(lambda s: simplify_label_by_roots(s, roots))
     )

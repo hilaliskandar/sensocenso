@@ -22,6 +22,7 @@ from censo_app.transform import (
 )
 from censo_app.viz import construir_piramide_etaria as _construir_piramide
 from censo_app.ui import renderizar_barra_superior as _renderizar_barra_superior
+from censo_app.ui_utils import ensure_abnt_css, dataframe_to_csv_download
 from config.config_loader import get_settings, get_page_config
 from censo_app.demog_utils import (
     normalize_age_label as _normalize_age_label,
@@ -168,6 +169,9 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# Garantir CSS ABNT padronizado (legendas e fontes de figuras) após CSS da página
+ensure_abnt_css()
 
 # Página enxuta: sem controles internos desnecessários no sidebar
 
@@ -1001,11 +1005,10 @@ st.markdown(_render_abnt_html(abnt_table), unsafe_allow_html=True)
 st.markdown(f"<div style='font-size:10pt; text-align:left;'>{UI_CFG.get('labels', {}).get('source_text_table', 'Fonte: IBGE')}</div>", unsafe_allow_html=True)
 
 csv_abnt = abnt_table.to_csv(index=False, encoding='utf-8-sig')
-st.download_button(
-    label="📥 Baixar Tabela (CSV)",
-    data=csv_abnt,
+dataframe_to_csv_download(
+    abnt_table,
     file_name=f"tabela_demografica_{_sanitize_title(title_suffix).replace(' ', '_')}.csv",
-    mime="text/csv",
+    label="📥 Baixar Tabela (CSV)",
 )
 
 # Notas explicativas (apresentação) — filtros aplicados e registros com valores ausentes
