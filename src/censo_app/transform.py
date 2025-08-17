@@ -342,13 +342,13 @@ def _pick_exact_age_cols(columns: List[str]) -> Tuple[List[str], List[str]]:
     return male_cols, female_cols
 
 def _resolve_parquet_path(primary: Optional[str]) -> Tuple[str, List[str]]:
-    """Resolve o caminho do parquet considerando múltiplas alternativas.
+    r"""Resolve o caminho do parquet considerando múltiplas alternativas.
 
     Ordem de tentativa:
     1. Caminho informado (primary)
     2. Variável de ambiente SENSOCENSO_PARQUET
     3. Caminhos comuns no projeto (data/sp.parquet)
-    4. Caminho absoluto indicado pelo usuário (D:\repo\saida_parquet\base_integrada_final.parquet)
+    4. Caminho absoluto indicado pelo usuário (D:\\repo\\saida_parquet\\base_integrada_final.parquet)
 
     Retorna (caminho_resolvido_posix, lista_de_caminhos_testados)
     """

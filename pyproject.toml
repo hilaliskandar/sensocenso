@@ -1,0 +1,21 @@
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+  "E", "F",       # pycodestyle, pyflakes
+  "I",            # isort
+  "UP",           # pyupgrade
+  "B",            # bugbear
+]
+ignore = [
+  "E203",  # whitespace before ':' (conflicts with black)
+]
+fix = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["censo_app"]
+profile = "black"
