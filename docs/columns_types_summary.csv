@@ -1,0 +1,6 @@
+﻿parquet_type,count
+BIGINT,1420
+VARCHAR,30
+DOUBLE,4
+BLOB,1
+JSON,1

@@ -50,6 +50,35 @@ VAR_LABELS: Dict[str, str] = {
     "V0007": "Total de Domicílios Particulares Ocupados (DPPO + DPIO)",
 }
 
+# Cache do mapeamento externo gerado em docs/columns_map.csv
+_COLMAP_CACHE: Optional[Dict[str, str]] = None
+
+def _get_external_colmap(path: Optional[str] = None) -> Dict[str, str]:
+    """Lê docs/columns_map.csv (se existir) e devolve um dicionário
+    parquet_column -> app_equivalent (apenas quando diferente e não vazio).
+
+    Resultado é cacheado para reduzir IO.
+    """
+    global _COLMAP_CACHE
+    if _COLMAP_CACHE is not None:
+        return _COLMAP_CACHE
+    root = _P(__file__).resolve().parents[3]
+    csv_path = _P(path) if path else (root / "docs" / "columns_map.csv")
+    out: Dict[str, str] = {}
+    try:
+        if csv_path.exists():
+            df_map = pd.read_csv(csv_path)
+            if set(["parquet_column", "app_equivalent"]).issubset(df_map.columns):
+                for row in df_map.itertuples(index=False):
+                    orig = getattr(row, "parquet_column", None)
+                    eqv = getattr(row, "app_equivalent", None)
+                    if isinstance(orig, str) and isinstance(eqv, str) and orig and eqv and orig != eqv:
+                        out[orig] = eqv
+    except Exception:
+        out = {}
+    _COLMAP_CACHE = out
+    return out
+
 def _normcol(s: str) -> str:
     s = unicodedata.normalize("NFKD", str(s))
     s = "".join(c for c in s if not unicodedata.combining(c))
@@ -74,6 +103,11 @@ ALIASES = {
 }
 
 def _rename_by_alias(df: pd.DataFrame) -> pd.DataFrame:
+    # 0) Aplicar mapeamento externo (se disponível)
+    ext = _get_external_colmap()
+    if ext:
+        df = df.rename(columns={c: ext[c] for c in df.columns if c in ext})
+
     rename = {}
     norm_lookup = {_normcol(c): c for c in df.columns}
     # 1) Aliases semânticos (campos de identificação/descrição)
