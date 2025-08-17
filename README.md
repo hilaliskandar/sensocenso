@@ -2,13 +2,37 @@
 
 Plataforma Streamlit enxuta para análise demográfica (pirâmide etária) por município e por setor censitário, baseada no Parquet local do Censo 2022 de SP.
 
-## Como rodar
+## Como rodar (Windows/PowerShell)
+
+1) Pré-requisitos
+- Python 3.10+ (ou Conda/Miniconda)
+- Parquet do Censo SP e Excel de RM/AU disponíveis no disco
+
+2) Configure caminhos em `config/settings.yaml`
+```
+paths:
+	parquet_default: "D:/repo/saida_parquet/base_integrada_final.parquet"
+	rm_au_excel_default: "D:/repo/insumos/Composicao_RM_2024.xlsx"
+```
+
+3) Ambiente e dependências (opção A: venv)
 ```powershell
 cd <pasta_do_projeto>
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m streamlit run app.py
+```
+
+3') Ambiente (opção B: Conda)
+```powershell
+conda create -y -n sensocenso python=3.11
+conda activate sensocenso
+pip install -r requirements.txt
+```
+
+4) Executar o app
+```powershell
+python -m streamlit run app.py --server.port 8501
 ```
 
 No app, abra a página **Demografia (10_Demografia)**.
@@ -26,6 +50,14 @@ D:\repo\saida_parquet\base_integrada_final.parquet
 - Checagem: soma M+F vs **V0001 (Total de pessoas)**, diferença absoluta e %.
 - Gráfico de pizza (M/F) para setor e para município.
 - Cache de dados com TTL e keepalive opcional.
+
+### Erros comuns (Windows)
+- Porta ocupada: troque `--server.port 8501` para outro (8502, 8511, …).
+- Processos travados: finalize Python.
+	```powershell
+	taskkill /f /im python.exe 2>$null
+	```
+- Dados não carregam: verifique caminhos no `settings.yaml` e se o Parquet/Excel existem.
 
 ## Algoritmo de ponta a ponta (Demografia)
 
@@ -64,6 +96,28 @@ flowchart LR
 		A4 --> K2
 	end
 ```
+
+	### Segundo diagrama — Tabela ABNT (pipeline e cálculos)
+
+	```mermaid
+	flowchart TD
+		L[df_plot (sexo × faixa)] --> P1[Pivot por faixa: colunas Masculino/Feminino]
+		P1 --> T1[Total = Masculino + Feminino]
+		T1 --> PM[% Masculino = M/Total * 100]
+		T1 --> PF[% Feminino = F/Total * 100]
+		T1 --> PT[% do Total (escopo) por faixa]
+		subgraph Comparador
+			LC[df_comp_plot] --> PC1[Pivot comparador]
+			PC1 --> TC1[Total_comp]
+			TC1 --> PTC[% do Total (Comp) por faixa]
+		end
+		PT --> MRG[Merge PT × PTC por faixa]
+		PTC --> MRG
+		MRG --> D[Δ vs Comp. = PT - PTC (pp)]
+		D --> O1[Ordenação canônica das faixas + linha TOTAL]
+		O1 --> O2[Formatar e renderizar HTML ABNT]
+		O2 --> CSV[Export CSV UTF-8 BOM]
+	```
 
 ### Entradas
 - Caminho do Parquet (SP/UF=35): `config.paths.parquet_default` ou informado no app.
@@ -129,6 +183,12 @@ flowchart LR
 	 - Calcula `% do Total` (escopo) e `% do Total (Comp)` e o delta `Δ vs Comp.` em pontos percentuais.
 	 - Ordena faixas conforme ordem canônica; adiciona linha `TOTAL`.
 	 - Exporta CSV (UTF-8 com BOM).
+
+	### Como usar no app
+	- Escolha a escala (Estado, RM/AU, Região, Município, Setores).
+	- Ajuste filtros Situação (U/R) e Tipo de Setor conforme necessário.
+	- Na escala Município, o comparador é determinado automaticamente (RM/AU > RM/AU legado > RGI > Estado).
+	- Baixe a tabela em CSV pelo botão “Baixar Tabela (CSV)”.
 
 ### Esquemas de dados esperados
 - Wide (parcial, depende do Parquet):
