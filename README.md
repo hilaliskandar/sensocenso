@@ -10,12 +10,20 @@ Plataforma Streamlit enxuta para análise demográfica (pirâmide etária) por m
 - [Recursos](#recursos)
 - [Erros comuns (Windows)](#erros-comuns-windows)
 - [Algoritmo de ponta a ponta (Demografia)](#algoritmo-de-ponta-a-ponta-demografia)
-	- [Visão geral (fluxo)](#visão-geral-fluxo)
-	- [Segundo diagrama — Tabela ABNT](#segundo-diagrama--tabela-abnt-pipeline-e-cálculos)
+	- [Visão geral (resumo)](#visão-geral-resumo)
+	- [Ingestão e normalização](#ingestão-e-normalização)
+	- [Preparação da pirâmide](#preparação-da-pirâmide)
+	- [Comparador](#comparador)
+	- [Tabela ABNT](#tabela-abnt-pipeline-e-cálculos)
 - [Censo 2022 — SP Platform (English)](#censo-2022--sp-platform-english)
 	- [How to run (Windows/PowerShell)](#how-to-run-windowspowershell)
 	- [Common issues (Windows)](#common-issues-windows)
 	- [End-to-end algorithm (Demography)](#end-to-end-algorithm-demography)
+		- [Overview](#overview)
+		- [Ingestion and normalization](#ingestion-and-normalization)
+		- [Pyramid preparation](#pyramid-preparation)
+		- [Comparator](#comparator)
+		- [ABNT table](#abnt-table)
 
 ## Como rodar (Windows/PowerShell)
 
@@ -78,41 +86,65 @@ D:\repo\saida_parquet\base_integrada_final.parquet
 
 Esta seção documenta, em detalhes, todas as etapas do pipeline desde as fontes de dados até a apresentação final na página Demografia, incluindo regras de decisão, entradas, saídas e tratamento de bordas.
 
-### Visão geral (fluxo)
+### Visão geral (resumo)
+
+Observação sobre Mermaid no GitHub: prefira rótulos curtos, apenas ASCII, orientação simples e subgraphs para agrupar. Referência: https://docs.github.com/pt/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams#creating-mermaid-diagrams
 
 ```mermaid
-flowchart LR
-	A["Parquet Censo 2022 - SP (fonte)"] --> B["Leitura via DuckDB (UF=35)"]
-	B --> C["Normalizacao de colunas<br/>(aliases + docs/columns_map.csv)"]
-	C --> D["Decodificacao e campos derivados<br/>CD_SITUACAO para SITUACAO, CD_TIPO para TP_SETOR_TXT"]
-	D --> E["Enriquecimento RM/AU a partir do Excel<br/>Composicao_RM_2024.xlsx"]
-	E --> F["Dataset wide"]
-	F --> G["wide_to_long_pyramid<br/>(melt das 22 colunas etarias: 11x M/F)"]
-	G --> H["Normalizacao de rotulos<br/>Categorizacao em 11 faixas (decadas)"]
-	H --> I["Filtros e escopo escolhidos na UI"]
-	I --> J["Agregacao: sexo x faixa etaria"]
-	J --> K["Padding de faixas faltantes<br/>+ ordem canonica"]
-	K --> L1["Grafico Piramide - Municipio (absoluto)"]
-	K --> L2["Grafico Piramide - Comparador (% do total do comparador)"]
-	K --> M["Tabela ABNT<br/>Pivot, totais, % por sexo, % do total, Delta vs comparador"]
-	L1 --> N["Renderizacao Plotly + CSS"]
-	L2 --> N
-	M --> O["Export CSV"]
-
-		subgraph Comparador
-			K1["Determinar comparador"]
-			K1 -->|1| A1["Se TIPO_RM_AU + NOME_RM_AU disponiveis, usar"]
-			K1 -->|2| A2["Se nao, RM_NOME / AU_NOME"]
-			K1 -->|3| A3["Se nao, NM_RGI"]
-			K1 -->|4| A4["Fallback: Estado"]
-			A1 --> K2["Agrega e normaliza para %"]
-		A2 --> K2
-		A3 --> K2
-		A4 --> K2
-	end
+flowchart TD
+	A["Parquet SP 2022"] --> B["DuckDB UF 35"]
+	B --> C["Normalizar + decodificar"]
+	C --> D["Enriquecer RM AU"]
+	D --> E["Wide to Long (22 col)"]
+	E --> F["UI filtros e escopo"]
+	F --> G["Agrega + pad + ordem"]
+	G --> H["Piramide Escopo (abs)"]
+	G --> I["Piramide Comparador (pct)"]
+	G --> J["Tabela ABNT"]
+	J --> K["Exportar CSV"]
 ```
 
-### Segundo diagrama — Tabela ABNT (pipeline e cálculos)
+### Ingestão e normalização
+
+```mermaid
+flowchart TD
+	A["Parquet SP 2022"] --> B["DuckDB ler UF 35"]
+	B --> C["Normalizar colunas"]
+	C --> D["Decodificar situacao e tipo"]
+	D --> E["Enriquecer com RM AU Excel"]
+	E --> F["Dataset wide"]
+```
+
+### Preparação da pirâmide
+
+```mermaid
+flowchart TD
+	A["Wide dataset"] --> B["Wide to Long 22 col"]
+	B --> C["Normalizar rotulos 11 faixas"]
+	C --> D["Aplicar filtros e escopo"]
+	D --> E["Agrega sexo x faixa"]
+	E --> F["Padding faixas ausentes"]
+	F --> G["Forcar ordem canonica"]
+	G --> H["Piramide Escopo (abs)"]
+```
+
+### Comparador
+
+```mermaid
+flowchart TD
+	K1["Escolher comparador"] -->|1| A1["TIPO_RM_AU + NOME_RM_AU"]
+	K1 -->|2| A2["RM_NOME ou AU_NOME"]
+	K1 -->|3| A3["NM_RGI"]
+	K1 -->|4| A4["Estado"]
+	A1 --> K2["Agrega comparador"]
+	A2 --> K2
+	A3 --> K2
+	A4 --> K2
+	K2 --> P1["Converter para pct do total"]
+	P1 --> P2["Piramide Comparador (pct)"]
+```
+
+### Tabela ABNT (pipeline e cálculos)
 
 ```mermaid
 flowchart TD
@@ -256,56 +288,84 @@ Open page: Demografia (10_Demografia).
 
 ## End-to-end algorithm (Demography)
 
-```mermaid
-flowchart LR
-	A["SP Census 2022 Parquet (source)"] --> B["Read via DuckDB (UF=35)"]
-	B --> C["Column normalization<br/>(aliases + docs/columns_map.csv)"]
-	C --> D["Decoding and derived fields<br/>CD_SITUACAO to SITUACAO, CD_TIPO to TP_SETOR_TXT"]
-	D --> E["RM/AU enrichment from Excel<br/>Composicao_RM_2024.xlsx"]
-	E --> F["Wide dataset"]
-	F --> G["wide_to_long_pyramid<br/>(melt 22 age-sex cols: 11x M/F)"]
-	G --> H["Label normalization<br/>11 decade buckets"]
-	H --> I["UI filters and scope"]
-	I --> J["Aggregation: sex x age bucket"]
-	J --> K["Pad missing buckets<br/>+ canonical order"]
-	K --> L1["Pyramid - Scope (absolute)"]
-	K --> L2["Pyramid - Comparator (% of comparator total)"]
-	K --> M["ABNT table<br/>Pivot, totals, % by sex, % of total, Delta vs comparator"]
-	L1 --> N["Plotly + CSS"]
-	L2 --> N
-	M --> O["Export CSV"]
+Tip for Mermaid on GitHub: keep labels short ASCII-only, prefer top-down orientation, and use subgraphs to group. Reference: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams#creating-mermaid-diagrams
 
-	subgraph Comparator
-		K1[Pick comparator]
-		K1 -->|1| A1[If TIPO_RM_AU + NOME_RM_AU available, use]
-		K1 -->|2| A2[Else RM_NOME / AU_NOME]
-		K1 -->|3| A3[Else NM_RGI]
-		K1 -->|4| A4[Fallback: State]
-		A1 --> K2[Aggregate and normalize to %]
-		A2 --> K2
-		A3 --> K2
-		A4 --> K2
-	end
-```
+### Overview
 
 ```mermaid
 flowchart TD
-	L["df_plot (sex x age)"] --> P1["Pivot by age: columns Male/Female"]
-	P1 --> T1["Total = Male + Female"]
-	T1 --> PM["% Male = M/Total * 100"]
-	T1 --> PF["% Female = F/Total * 100"]
-	T1 --> PT["% of Total (scope) by age"]
+	A["SP Parquet 2022"] --> B["DuckDB UF 35"]
+	B --> C["Normalize + decode"]
+	C --> D["Enrich RM AU"]
+	D --> E["Wide to Long (22 cols)"]
+	E --> F["UI filters + scope"]
+	F --> G["Aggregate + pad + order"]
+	G --> H["Pyramid Scope (abs)"]
+	G --> I["Pyramid Comparator (pct)"]
+	G --> J["ABNT table"]
+	J --> K["Export CSV"]
+```
+
+### Ingestion and normalization
+
+```mermaid
+flowchart TD
+	A["SP Parquet 2022"] --> B["Read UF 35 with DuckDB"]
+	B --> C["Normalize columns"]
+	C --> D["Decode situation and type"]
+	D --> E["Enrich with RM AU Excel"]
+	E --> F["Wide dataset"]
+```
+
+### Pyramid preparation
+
+```mermaid
+flowchart TD
+	A["Wide dataset"] --> B["Wide to Long 22 cols"]
+	B --> C["Normalize labels 11 buckets"]
+	C --> D["Apply UI filters and scope"]
+	D --> E["Aggregate sex x age"]
+	E --> F["Pad missing buckets"]
+	F --> G["Force canonical order"]
+	G --> H["Pyramid Scope (abs)"]
+```
+
+### Comparator
+
+```mermaid
+flowchart TD
+	K1["Pick comparator"] -->|1| A1["TIPO_RM_AU + NOME_RM_AU"]
+	K1 -->|2| A2["RM_NOME or AU_NOME"]
+	K1 -->|3| A3["NM_RGI"]
+	K1 -->|4| A4["State"]
+	A1 --> K2["Aggregate comparator"]
+	A2 --> K2
+	A3 --> K2
+	A4 --> K2
+	K2 --> P1["Convert to pct of total"]
+	P1 --> P2["Pyramid Comparator (pct)"]
+```
+
+### ABNT table
+
+```mermaid
+flowchart TD
+	L[df_plot (sex x age)] --> P1[Pivot by age: Male/Female]
+	P1 --> T1[Total = Male + Female]
+	T1 --> PM[% Male = M/Total * 100]
+	T1 --> PF[% Female = F/Total * 100]
+	T1 --> PT[% of Total (scope) by age]
 	subgraph Comparator
-		LC["df_comp_plot"] --> PC1["Comparator pivot"]
-		PC1 --> TC1["Total_comp"]
-		TC1 --> PTC["% of Total (Comp) by age"]
+		LC[df_comp_plot] --> PC1[Comparator pivot]
+		PC1 --> TC1[Total_comp]
+		TC1 --> PTC[% of Total (Comp) by age]
 	end
-	PT --> MRG["Merge PT x PTC by age"]
+	PT --> MRG[Merge PT x PTC by age]
 	PTC --> MRG
-	MRG --> D["Delta vs Comp. = PT - PTC (pp)"]
-	D --> O1["Canonical order + TOTAL row"]
-	O1 --> O2["Format + render ABNT HTML"]
-	O2 --> CSV["Export CSV UTF-8 BOM"]
+	MRG --> D[Delta vs Comp. = PT - PTC (pp)]
+	D --> O1[Canonical order + TOTAL]
+	O1 --> O2[Format + render ABNT]
+	O2 --> CSV[Export CSV UTF-8 BOM]
 ```
 
 ### Esquemas de dados esperados
