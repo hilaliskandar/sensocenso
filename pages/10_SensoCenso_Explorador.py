@@ -1,5 +1,5 @@
 
-import sys, base64
+import sys
 from pathlib import Path as _P
 import streamlit as st
 import pandas as pd
@@ -18,35 +18,11 @@ from censo_app.transform import (
     load_sp_age_sex_enriched, aggregate_pyramid, SITUACAO_DET_MAP, TIPO_MAP
 )
 from censo_app.viz import make_age_pyramid
+from censo_app.ui import render_topbar
 
 st.set_page_config(page_title="Senso&Censo - Explorador de dados censitários", layout="wide")
 
-st.markdown('''
-<style>
-[data-testid="stHeader"] {visibility: hidden; height: 0;}
-[data-testid="stSidebar"] {background: #c1121f !important;}
-[data-testid="stSidebar"] * {color: #fff !important;}
-.stApp { background-color: #f5f6f7; }
-.block-container { padding-top: 0.5rem; }
-.senso-topbar { background:#000; color:#fff; padding:10px 16px; margin:0 0 10px 0; border-radius:10px; display:flex; align-items:center; gap:12px; }
-.senso-title { font-size: 1.1rem; font-weight: 600; line-height:1.2; }
-.senso-sub { font-size: 0.85rem; opacity: 0.8; }
-</style>
-''', unsafe_allow_html=True)
-
-logo_path = _P(__file__).resolve().parent / "assets" / "logo.png"
-if logo_path.exists():
-    st.markdown(f'''
-    <div class="senso-topbar">
-        <img src="data:image/png;base64,{base64.b64encode(open(logo_path,"rb").read()).decode()}" height="42" />
-        <div>
-          <div class="senso-title">Senso&amp;Censo — Explorador de dados censitários</div>
-          <div class="senso-sub">Censo 2022 — SP</div>
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
-else:
-    st.markdown('<div class="senso-topbar"><b>Senso&Censo — Explorador de dados censitários</b></div>', unsafe_allow_html=True)
+render_topbar()
 
 with st.sidebar:
     keepalive = st.checkbox("Evitar expirar (autorefresh a cada 5 min)", value=False)

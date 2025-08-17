@@ -38,6 +38,18 @@ AGE_GROUPS = [
     "50 a 59 anos","60 a 69 anos","70 anos ou mais",
 ]
 
+# Rótulos oficiais para variáveis V0001–V0007
+# Fonte: especificação fornecida pelo usuário
+VAR_LABELS: Dict[str, str] = {
+    "V0001": "Total de pessoas",
+    "V0002": "Total de Domicílios (DPPO + DPPV + DPPUO + DPIO + DCCM + DCSM)",
+    "V0003": "Total de Domicílios Particulares (DPPO + DPPV + DPPUO + DPIO)",
+    "V0004": "Total de Domicílios Coletivos (DCCM + DCSM)",
+    "V0005": "Média de moradores em Domicílios Particulares Ocupados (Total pessoas em Domicílios Particulares Ocupados / DPPO + DPIO)",
+    "V0006": "Percentual de Domicílios Particulares Ocupados Imputados (Total DPO imputados / Total DPO)",
+    "V0007": "Total de Domicílios Particulares Ocupados (DPPO + DPIO)",
+}
+
 def _normcol(s: str) -> str:
     s = unicodedata.normalize("NFKD", str(s))
     s = "".join(c for c in s if not unicodedata.combining(c))
@@ -50,11 +62,11 @@ ALIASES = {
     "NM_MUN": {"NM_MUN","NOME_DO_MUNICIPIO","NOME_MUNICIPIO"},
     "CD_UF": {"CD_UF","CODIGO_DA_UNIDADE_DA_FEDERACAO","UF_CODIGO"},
     "NM_UF": {"NM_UF","NOME_DA_UNIDADE_DA_FEDERACAO"},
-    "CD_SITUACAO": {"CD_SITUACAO","SITUACAO_DETALHADA_DO_SETOR_CENSITARIO_CODIGO","COD_SITUACAO_DETALHADA"},
-    "SITUACAO_DET_TXT": {"SITUACAO_DET_TXT","SITUACAO_DETALHADA_DO_SETOR_CENSITARIO"},
+    "CD_SITUACAO": {"CD_SITUACAO","SITUACAO_DETALHADA_DO_SETOR_CENSITARIO_CODIGO","COD_SITUACAO_DETALHADA","Código da Situação detalhada do Setor Censitário"},
+    "SITUACAO_DET_TXT": {"SITUACAO_DET_TXT","SITUACAO_DETALHADA_DO_SETOR_CENSITARIO","Situação detalhada do Setor Censitário"},
     "CD_TIPO": {"CD_TIPO","TIPO_DO_SETOR_CENSITARIO_CODIGO","COD_TIPO_SETOR"},
     "TP_SETOR_TXT": {"TP_SETOR_TXT","TIPO_DO_SETOR_CENSITARIO"},
-    "SITUACAO": {"SITUACAO","SITUACAO_DO_SETOR_CENSITARIO","SIT_SETOR"},
+    "SITUACAO": {"SITUACAO","SITUACAO_DO_SETOR_CENSITARIO","SIT_SETOR","Situação do Setor Censitário"},
     "RM_NOME": {"RM_NOME","NOME_CATMETROPOL","RM","NOME_RM"},
     "AU_NOME": {"AU_NOME","NOME_CATAU","NOME_CATÉU","AU","NOME_AU"},  # include accented É possibility (corrected encoding)
     "NM_RGINT": {"NM_RGINT","NOME_DA_REGIAO_GEOGRAFICA_INTERMEDIARIA"},
@@ -64,13 +76,31 @@ ALIASES = {
 def _rename_by_alias(df: pd.DataFrame) -> pd.DataFrame:
     rename = {}
     norm_lookup = {_normcol(c): c for c in df.columns}
+    # 1) Aliases semânticos (campos de identificação/descrição)
     for canon, variants in ALIASES.items():
         for v in variants:
             nv = _normcol(v)
             if nv in norm_lookup:
                 rename[norm_lookup[nv]] = canon
                 break
-    return df.rename(columns=rename)
+    out = df.rename(columns=rename)
+    # 2) Normalizar códigos v0001..v0007 para maiúsculo (V0001..V0007)
+    extra = {}
+    for c in out.columns:
+        m = re.fullmatch(r"(?i)v000([1-7])", str(c).strip())
+        if m:
+            extra[c] = f"V000{m.group(1)}"
+    if extra:
+        out = out.rename(columns=extra)
+    return out
+
+def get_variable_label(code: str) -> Optional[str]:
+    """Retorna o rótulo humano de uma variável V000x, se conhecido.
+
+    Aceita maiúsculas/minúsculas (e.g., "v0005").
+    """
+    k = str(code).strip().upper()
+    return VAR_LABELS.get(k)
 
 def _derive_macro_from_cd(cd):
     try:
@@ -177,7 +207,7 @@ def _pick_exact_age_cols(columns: List[str]) -> Tuple[List[str], List[str]]:
         if f_match: female_cols.append(f_match)
     return male_cols, female_cols
 
-def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, verbose: bool = False, uf_code: str = "35") -> pd.DataFrame:
+def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, verbose: bool = False, uf_code: str = "35", excel_path: Optional[str] = None) -> pd.DataFrame:
     if duckdb is None:
         raise ModuleNotFoundError("Instale 'duckdb' (pip install duckdb).")
     p = _P(path_parquet)
@@ -205,7 +235,7 @@ def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, ver
             df[v] = pd.to_numeric(df[v], errors="coerce").astype("float64")
         else:
             df[v] = pd.to_numeric(df[v], errors="coerce")
-    df = _merge_rm_au(df)
+    df = _merge_rm_au(df, excel_path=excel_path or "insumos/Composicao_RM_2024.xlsx")
     return df
 
 def wide_to_long_pyramid(df_wide: pd.DataFrame) -> pd.DataFrame:
@@ -248,3 +278,13 @@ def aggregate_pyramid(df: pd.DataFrame, group_by: Sequence[str] | None = None) -
                   .sort_values(keys)
                   .reset_index(drop=True))
     return out
+
+# --- Aliases em PT-BR (não quebram compatibilidade) ---
+def carregar_sp_idade_sexo_enriquecido(path_parquet: str, limite: Optional[int] = None, detalhar: bool = False, uf: str = "35", caminho_excel: Optional[str] = None) -> pd.DataFrame:
+    return load_sp_age_sex_enriched(path_parquet, limit=limite, verbose=detalhar, uf_code=uf, excel_path=caminho_excel)
+
+def largura_para_longo_piramide(df_largo: pd.DataFrame) -> pd.DataFrame:
+    return wide_to_long_pyramid(df_largo)
+
+def agregar_piramide(df: pd.DataFrame, agrupar_por: Sequence[str] | None = None) -> pd.DataFrame:
+    return aggregate_pyramid(df, group_by=agrupar_por)
