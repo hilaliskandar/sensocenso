@@ -23,7 +23,7 @@ def ler_grupos():
     p = Path("config/categorias.yaml")
     with p.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
-    return cfg.get("groups", [])
+    return cfg
 
 def _fmt_mun(cd: str|None, lookup: pd.DataFrame):
     if not cd:
@@ -34,7 +34,9 @@ def _fmt_mun(cd: str|None, lookup: pd.DataFrame):
     return f"{row.iloc[0]['NM_MUN']} ({row.iloc[0]['CD_MUN']})"
 
 df = carregar_df()
-grupos = ler_grupos()
+_cfg = ler_grupos() or {}
+grupos = (_cfg.get("groups") or [])
+palette = (_cfg.get("palette") or [])
 
 st.title("Domicílios — Indicadores Categóricos")
 
@@ -108,6 +110,10 @@ for grupo in grupos:
 
     base_estado = _build(df_filt)  # estado após filtros
     base_sel = _build(df_scope)
+    if palette:
+        # aplicar rotação de cores para manter consistência
+        import itertools
+        colors = list(itertools.islice(itertools.cycle(palette), max(len(base_estado), len(base_sel))))
 
     with st.container():
         st.subheader(titulo)
@@ -115,14 +121,22 @@ for grupo in grupos:
         with c1:
             if not base_estado.empty:
                 if chart == "pie" and len(base_estado) <= 8:
-                    st.plotly_chart(construir_grafico_pizza(base_estado, titulo=f"{titulo} — Estado (%)"), use_container_width=True)
+                    fig = construir_grafico_pizza(base_estado, titulo=f"{titulo} — Estado (%)")
                 else:
-                    st.plotly_chart(construir_grafico_barra(base_estado, titulo=f"{titulo} — Estado (%)"), use_container_width=True)
+                    fig = construir_grafico_barra(base_estado, titulo=f"{titulo} — Estado (%)")
+                if palette:
+                    fig.update_traces(marker=dict(colorscale=None), marker_colors=colors[:len(base_estado)])
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption("Fonte: Elaboração própria com dados do Censo Demográfico 2022 (IBGE).")
         with c2:
             if not base_sel.empty:
                 if chart == "pie" and len(base_sel) <= 8:
-                    st.plotly_chart(construir_grafico_pizza(base_sel, titulo=f"{titulo} — {title_suffix}"), use_container_width=True)
+                    fig2 = construir_grafico_pizza(base_sel, titulo=f"{titulo} — {title_suffix}")
                 else:
-                    st.plotly_chart(construir_grafico_barra(base_sel, titulo=f"{titulo} — {title_suffix}"), use_container_width=True)
+                    fig2 = construir_grafico_barra(base_sel, titulo=f"{titulo} — {title_suffix}")
+                if palette:
+                    fig2.update_traces(marker=dict(colorscale=None), marker_colors=colors[:len(base_sel)])
+                st.plotly_chart(fig2, use_container_width=True)
+                st.caption("Fonte: Elaboração própria com dados do Censo Demográfico 2022 (IBGE).")
 
 st.caption("Fonte: Censo 2022 — IBGE")

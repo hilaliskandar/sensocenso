@@ -1,3 +1,15 @@
+palette:
+  - "#1f77b4"
+  - "#ff7f0e"
+  - "#2ca02c"
+  - "#d62728"
+  - "#9467bd"
+  - "#8c564b"
+  - "#e377c2"
+  - "#7f7f7f"
+  - "#bcbd22"
+  - "#17becf"
+
 groups:
   - id: domicilios_tipo_ocupado
     title: "Tipo de Domicílio Ocupado"
@@ -34,6 +46,35 @@ groups:
       - "Domicílios Particulares Permanentes Ocupados, Tipo de espécie é habitação em casa de cômodos ou cortiço"
       - "Domicílios Particulares Permanentes Ocupados, Tipo de espécie é habitação indígena sem paredes ou maloca"
       - "Domicílios Particulares Permanentes Ocupados, Tipo de espécie é estrutura residencial permanente degradada ou inacabada"
+    chart: "bar"
+
+  - id: dpio_tipo_especie
+    title: "Tipo de Espécie — Domicílios Particulares Improvisados Ocupados"
+    description: "Tipo de espécie do domicílio (DPIO)"
+    columns:
+      - "Domicílios Particulares Improvisados Ocupados, Tipo de espécie é tenda ou barraca de lona, plástico ou tecido"
+      - "Domicílios Particulares Improvisados Ocupados, Tipo de espécie é dentro de estabelecimento em funcionamento"
+      - "Domicílios Particulares Improvisados Ocupados, Tipo de espécie é abrigo natural e outras estruturas improvisadas"
+      - "Domicílios Particulares Improvisados Ocupados, Tipo de espécie é estrutura improvisada em logradouro público, exceto tenda ou barraca"
+      - "Domicílios Particulares Improvisados Ocupados, Tipo de espécie é estrutura não residencial permanente degradada ou inacabada"
+      - "Domicílios Particulares Improvisados Ocupados, Tipo de espécie é veículo (carro, caminhão, trailer, barco etc)"
+    chart: "bar"
+
+  - id: dccm_tipo_especie
+    title: "Tipo de Espécie — Domicílios Coletivos Com Morador"
+    description: "Tipo de espécie do domicílio coletivo (DCCM)"
+    columns:
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é asilo ou outra instituição de longa permanência para idosos"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é hotel ou pensão"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é alojamento"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é penitenciária, centro de detenção e similar"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é outros domicílios coletivos com morador"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é abrigo, albergue ou casa de passagem para população em situação de rua"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é abrigo, casas de passagem ou república assistencial para outros grupos vulneráveis"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é clínica psiquiátrica, comunidade terapêutica e similar"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é orfanato e similar"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é unidade de internação de menores"
+      - "Domicílios Coletivos Com Morador, Tipo de espécie é quartel ou outra organização militar"
     chart: "bar"
 
   - id: dppo_abastecimento_agua
@@ -120,3 +161,70 @@ groups:
       - "Domicílios Particulares Permanentes Ocupados, Com banheiro de uso exclusivo com chuveiro e vaso sanitário"
       - "Domicílios Particulares Permanentes Ocupados, Sem banheiro de uso exclusivo com chuveiro e vaso sanitário"
     chart: "pie"
+
+  - id: dpio_qtd_moradores
+    title: "Quantidade de Moradores — Domicílios Particulares Improvisados Ocupados"
+    description: "Nº de moradores no domicílio (DPIO)"
+    columns:
+      - "Domicílios Particulares Improvisados Ocupados, Quantidade de moradores"
+    chart: "bar"
+
+  - id: dccm_qtd_moradores
+    title: "Quantidade de Moradores — Domicílios Coletivos Com Morador"
+    description: "Nº de moradores no domicílio coletivo (DCCM)"
+    columns:
+      - "Domicílios Coletivos Com Morador, Quantidade de moradores"
+    chart: "bar"
+
+  - id: dppo_criancas_0a9
+    title: "Crianças 0–9 anos — Domicílios Particulares Permanentes Ocupados"
+    description: "Quantidade de crianças 0–9 anos (DPPO)"
+    columns:
+      - "Domicílios Particulares Permanentes Ocupados, Quantidade de crianças de zero a nove anos de idade"
+    chart: "bar"
+
+  - id: dpio_criancas_0a9
+    title: "Crianças 0–9 anos — Domicílios Particulares Improvisados Ocupados"
+    description: "Quantidade de crianças 0–9 anos (DPIO)"
+    columns:
+      - "Domicílios Particulares Improvisados Ocupados, Quantidade de crianças de zero a nove anos de idade"
+    chart: "bar"
+
+  - id: dccm_criancas_0a9
+    title: "Crianças 0–9 anos — Domicílios Coletivos Com Morador"
+    description: "Quantidade de crianças 0–9 anos (DCCM)"
+    columns:
+      - "Domicílios Coletivos Com Morador, Quantidade de crianças de zero a nove anos de idade"
+    chart: "bar"
+
+  - id: dpio_moradores_det
+    title: "Distribuição por Nº de Moradores — Domicílios Improvisados Ocupados"
+    description: "Moradores por domicílio (DPIO)"
+    columns:
+      - "Domicílios Particulares Improvisados Ocupados, Com 1 morador no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 2 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 3 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 4 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 5 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 6 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 7 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 8 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 9 moradores no domicílio"
+      - "Domicílios Particulares Improvisados Ocupados, Com 10 ou mais moradores no domicílio"
+    chart: "bar"
+
+  - id: dccm_moradores_det
+    title: "Distribuição por Nº de Moradores — Domicílios Coletivos Com Morador"
+    description: "Moradores por domicílio coletivo (DCCM)"
+    columns:
+      - "Domicílios Coletivos Com Morador, Com 1 morador no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 2 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 3 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 4 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 5 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 6 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 7 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 8 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 9 moradores no domicílio"
+      - "Domicílios Coletivos Com Morador, Com 10 ou mais moradores no domicílio"
+    chart: "bar"
