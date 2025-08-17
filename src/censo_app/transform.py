@@ -341,13 +341,49 @@ def _pick_exact_age_cols(columns: List[str]) -> Tuple[List[str], List[str]]:
         if f_match: female_cols.append(f_match)
     return male_cols, female_cols
 
+def _resolve_parquet_path(primary: Optional[str]) -> Tuple[str, List[str]]:
+    """Resolve o caminho do parquet considerando múltiplas alternativas.
+
+    Ordem de tentativa:
+    1. Caminho informado (primary)
+    2. Variável de ambiente SENSOCENSO_PARQUET
+    3. Caminhos comuns no projeto (data/sp.parquet)
+    4. Caminho absoluto indicado pelo usuário (D:\repo\saida_parquet\base_integrada_final.parquet)
+
+    Retorna (caminho_resolvido_posix, lista_de_caminhos_testados)
+    """
+    tried: List[str] = []
+
+    candidates: List[str] = []
+    if primary:
+        candidates.append(str(primary))
+    envp = os.environ.get("SENSOCENSO_PARQUET")
+    if envp:
+        candidates.append(envp)
+    # comuns relativos ao repo
+    candidates.append("data/sp.parquet")
+    # absoluto informado pelo usuário
+    candidates.append(r"D:\\repo\\saida_parquet\\base_integrada_final.parquet")
+
+    for c in candidates:
+        if not c:
+            continue
+        tried.append(c)
+        p = _P(c)
+        if p.exists():
+            return p.as_posix(), tried
+    # não encontrado
+    return "", tried
+
 def load_sp_age_sex_enriched(path_parquet: str, limit: Optional[int] = None, verbose: bool = False, uf_code: str = "35", excel_path: Optional[str] = None) -> pd.DataFrame:
     if duckdb is None:
         raise ModuleNotFoundError("Instale 'duckdb' (pip install duckdb).")
-    p = _P(path_parquet)
-    if not p.exists():
-        raise FileNotFoundError(f"Parquet não encontrado: {p}")
-    path_parquet = p.as_posix()
+    resolved, tried = _resolve_parquet_path(path_parquet)
+    if not resolved:
+        raise FileNotFoundError(
+            "Parquet não encontrado. Caminhos testados: " + "; ".join(tried)
+        )
+    path_parquet = resolved
     con = duckdb.connect()
     cols_df = con.execute(f"SELECT * FROM read_parquet('{path_parquet}') LIMIT 0").fetchdf()
     cols = cols_df.columns.tolist()
@@ -427,3 +463,58 @@ def largura_para_longo_piramide(df_largo: pd.DataFrame) -> pd.DataFrame:
 
 def agregar_piramide(df: pd.DataFrame, agrupar_por: Sequence[str] | None = None) -> pd.DataFrame:
     return aggregate_pyramid(df, group_by=agrupar_por)
+
+# --- Categóricos genéricos ---
+from typing import Sequence as _Seq
+
+def aggregate_categories(df: pd.DataFrame, columns: _Seq[str]) -> pd.DataFrame:
+    """Soma colunas categóricas e retorna DataFrame com (categoria, valor).
+
+    - Ignora colunas inexistentes silenciosamente.
+    - Mantém apenas categorias com valor > 0 e não nulo.
+    """
+    cols = [c for c in columns if c in df.columns]
+    if not cols:
+        return pd.DataFrame({"categoria": [], "valor": []})
+    sub = df[cols].copy()
+    # Coagir cada coluna individualmente para numérico; valores não numéricos viram NaN
+    for c in sub.columns:
+        sub[c] = pd.to_numeric(sub[c], errors="coerce")
+    # Somar por coluna para obter total por categoria
+    vals = sub.sum(axis=0, skipna=True)
+    out = pd.DataFrame({"categoria": vals.index, "valor": vals.values})
+    out = out[out["valor"].notna() & (out["valor"] > 0)]
+    return out.reset_index(drop=True)
+
+def categories_to_percent(df_cat: pd.DataFrame) -> pd.DataFrame:
+    """Converte valores para percentuais (0–100), preservando 'categoria' e colocando 'valor' como %.
+    """
+    if df_cat is None or df_cat.empty:
+        return df_cat
+    out = df_cat.copy()
+    total = pd.to_numeric(out["valor"], errors="coerce").sum()
+    if not total or total == 0:
+        return out.assign(valor=0.0)
+    out["valor"] = pd.to_numeric(out["valor"], errors="coerce").fillna(0) / float(total) * 100.0
+    return out
+
+def filter_by_situacao_tipo(df: pd.DataFrame, situacoes: _Seq[str] | None = None, tipos: _Seq[int] | None = None) -> pd.DataFrame:
+    """Aplica filtros de situação (Urbana/Rural) e tipos de setor (CD_TIPO).
+    Ignora filtros não informados ou colunas ausentes.
+    """
+    out = df.copy()
+    if situacoes and "SITUACAO" in out.columns:
+        out = out[out["SITUACAO"].isin(list(situacoes))]
+    if tipos and "CD_TIPO" in out.columns:
+        out = out[out["CD_TIPO"].isin(list(tipos))]
+    return out
+
+# Aliases PT-BR
+def agregar_categorias(df: pd.DataFrame, colunas: _Seq[str]) -> pd.DataFrame:
+    return aggregate_categories(df, columns=colunas)
+
+def categorias_para_percentual(df_cat: pd.DataFrame) -> pd.DataFrame:
+    return categories_to_percent(df_cat)
+
+def filtrar_situacao_tipo(df: pd.DataFrame, situacoes: _Seq[str] | None = None, tipos: _Seq[int] | None = None) -> pd.DataFrame:
+    return filter_by_situacao_tipo(df, situacoes, tipos)

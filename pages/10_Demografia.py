@@ -120,7 +120,7 @@ def create_abnt_demographic_table(df_plot, title_suffix=""):
 UI_CFG = get_page_config('demografia_ui') or {}
 st.set_page_config(layout="wide", initial_sidebar_state=UI_CFG.get('layout', {}).get('initial_sidebar_state', 'collapsed'))
 tb = UI_CFG.get('topbar', {})
-_renderizar_barra_superior(title=tb.get('title', "Explorador de Dados Censitários"), subtitle=tb.get('subtitle', "Censo 2022 — SP"))
+_renderizar_barra_superior(titulo=tb.get('title', "Explorador de Dados Censitários"), subtitulo=tb.get('subtitle', "Censo 2022 — SP"))
 st.title(UI_CFG.get('title', "Demografia"))
 
 # CSS: destacar selects como "botões" e permitir quebras em labels/títulos
@@ -715,7 +715,7 @@ if comp_available and 'df_comp_plot' in locals() and isinstance(df_comp_plot, pd
             fig.update_traces(text=None, hovertemplate="Faixa: %{y}<br>População: %{x:,}")
         except Exception:
             fig = go.Figure()
-        st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="demog_pyr_main")
     st.markdown(f"<div class='abnt-figure'><div class='abnt-source'>{UI_CFG.get('labels', {}).get('source_text_chart', 'Fonte: IBGE')}</div></div>", unsafe_allow_html=True)
 
     with col_mid:
@@ -757,7 +757,7 @@ if comp_available and 'df_comp_plot' in locals() and isinstance(df_comp_plot, pd
             figc.update_traces(text=None, hovertemplate="Faixa: %{y}<br>% População: %{x:.1f}%")
         except Exception:
             figc = go.Figure()
-        st.plotly_chart(figc, use_container_width=True)
+    st.plotly_chart(figc, use_container_width=True, key="demog_pyr_comp")
     st.markdown(f"<div class='abnt-figure'><div class='abnt-source'>{UI_CFG.get('labels', {}).get('source_text_chart', 'Fonte: IBGE')}</div></div>", unsafe_allow_html=True)
 
     # Resumos abaixo das pirâmides: município e comparador
@@ -807,7 +807,7 @@ else:
         fig.update_traces(text=None)
     except Exception:
         fig = go.Figure()
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="demog_pyr_single")
     st.markdown(f"<div class='abnt-figure'><div class='abnt-source'>{UI_CFG.get('labels', {}).get('source_text_chart', 'Fonte: IBGE')}</div></div>", unsafe_allow_html=True)
 
     st.markdown("\n")

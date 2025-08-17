@@ -70,19 +70,35 @@ def construir_piramide_etaria(df: pd.DataFrame, titulo: str = "Pirâmide etária
 
 # --- Categóricos ---
 def make_pie_chart(df, categoria_col: str = "categoria", valor_col: str = "valor", titulo: str | None = None):
-    fig = px.pie(df, names=categoria_col, values=valor_col, hole=0.0)
+    fig = px.pie(
+        df,
+        names=categoria_col,
+        values=valor_col,
+        hole=0.0,
+        labels={categoria_col: "Categorias", valor_col: "Valor"},
+    )
     if titulo:
         fig.update_layout(title_text=titulo, title_x=0.5)
     fig.update_traces(textposition='inside', textinfo='percent+label')
-    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), legend_title_text="Categorias")
     return fig
 
 def make_bar_chart(df, categoria_col: str = "categoria", valor_col: str = "valor", titulo: str | None = None):
     order = df.sort_values(valor_col, ascending=True)[categoria_col].tolist()
-    fig = px.bar(df, x=valor_col, y=categoria_col, orientation='h', category_orders={categoria_col: order})
+    fig = px.bar(
+        df,
+        x=valor_col,
+        y=categoria_col,
+        orientation='h',
+        category_orders={categoria_col: order},
+        labels={categoria_col: "Categorias", valor_col: "Valor"},
+    )
     if titulo:
         fig.update_layout(title_text=titulo, title_x=0.5)
     fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    # Evitar exibir o nome da coluna como título de eixo
+    fig.update_xaxes(title_text="Valor")
+    fig.update_yaxes(title_text="Categorias")
     return fig
 
 # Aliases PT-BR
