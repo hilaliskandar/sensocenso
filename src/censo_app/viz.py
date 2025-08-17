@@ -62,3 +62,7 @@ def make_age_pyramid(df: pd.DataFrame, title: str = "Pirâmide etária") -> go.F
     fig.update_yaxes(categoryorder='array', categoryarray=order)
     fig.update_xaxes(tickformat=",", title=None)
     return fig
+
+# Alias em PT-BR (API pública preferencial)
+def construir_piramide_etaria(df: pd.DataFrame, titulo: str = "Pirâmide etária") -> go.Figure:
+    return make_age_pyramid(df, title=titulo)

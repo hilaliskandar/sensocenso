@@ -18,12 +18,46 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from censo_app.transform import (
-    load_sp_age_sex_enriched, aggregate_pyramid, wide_to_long_pyramid,
-    carregar_sp_idade_sexo_enriquecido, largura_para_longo_piramide, agregar_piramide,
+    carregar_sp_idade_sexo_enriquecido, largura_para_longo_piramide,
 )
-from censo_app.viz import make_age_pyramid as _make_age_pyramid
-from censo_app.ui import render_topbar
+from censo_app.viz import construir_piramide_etaria as _construir_piramide
+from censo_app.ui import renderizar_barra_superior as _renderizar_barra_superior
 from config.config_loader import get_settings, get_page_config
+from censo_app.demog_utils import (
+    normalize_age_label as _normalize_age_label,
+    pad_pyramid_categories as _pad_cats_util,
+    aggregate_sex_age as _aggregate_local,
+)
+from censo_app.formatting import fmt_br as _fmt_br
+try:
+    from censo_app.text_utils import (
+        sanitize_title as _sanitize_title_shared,
+        clean_label as _clean_label_shared,
+        wrap_title as _wrap_title_shared,
+    )
+except ModuleNotFoundError:
+    # Fallback: reforça caminhos e tenta importação direta por arquivo
+    try:
+        PKG = SRC / "censo_app"
+        for pth in (str(SRC), str(ROOT), str(PKG)):
+            if pth not in sys.path:
+                sys.path.insert(0, pth)
+        from censo_app.text_utils import (
+            sanitize_title as _sanitize_title_shared,
+            clean_label as _clean_label_shared,
+            wrap_title as _wrap_title_shared,
+        )
+    except Exception:
+        import importlib.util as _ilu
+        _fp = (SRC / "censo_app" / "text_utils.py").resolve()
+        spec = _ilu.spec_from_file_location("censo_app.text_utils", str(_fp))
+        mod = _ilu.module_from_spec(spec)  # type: ignore[arg-type]
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        _sanitize_title_shared = mod.sanitize_title
+        _clean_label_shared = mod.clean_label
+        _wrap_title_shared = mod.wrap_title
+from censo_app.tables import build_abnt_demographic_table as _build_abnt_table, render_abnt_html as _render_abnt_html
 
 # Mapeamentos simplificados para os filtros (agora vindos do YAML quando disponível)
 _TIPO_MAP_DEFAULT = {
@@ -38,10 +72,9 @@ _TIPO_MAP_DEFAULT = {
     8: "Agrovila do PA",
     9: "Agrupamento quilombola",
 }
-SITUACAO_DET_MAP = {"Urbana": "Urbana", "Rural": "Rural"}
+# SITUACAO_DET_MAP não utilizado nesta página
 
-def _aggregate_local(df_long: pd.DataFrame) -> pd.DataFrame:
-    return df_long.groupby(['sexo', 'faixa_etaria'], as_index=False, observed=False)['populacao'].sum()
+# usa _aggregate_local importado de demog_utils
 
 DEMOG_CFG = get_page_config('demografia')
 # Carrega TIPO_MAP do YAML se existir
@@ -55,242 +88,40 @@ except Exception:
     pass
 
 def _pad_pyramid_categories(df: pd.DataFrame) -> pd.DataFrame:
-    """Garante que todas as faixas etárias existam para ambos os sexos.
-    Retorna dataframe agregado em ['sexo','faixa_etaria'] com linhas ausentes preenchidas com 0.
-    """
     try:
         faixas_ordem = DEMOG_CFG.get('age_buckets_order', [
             "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
             "20 a 24 anos", "25 a 29 anos", "30 a 39 anos", "40 a 49 anos",
             "50 a 59 anos", "60 a 69 anos", "70 anos ou mais"
         ])
-        sexes = ["Masculino", "Feminino"]
-        base = pd.MultiIndex.from_product([sexes, faixas_ordem], names=["sexo","faixa_etaria"]).to_frame(index=False)
-        df = df.copy()
-        df["faixa_etaria"] = df["faixa_etaria"].apply(_normalize_age_label)
-        g = df.groupby(["sexo","faixa_etaria"], as_index=False, observed=False)["populacao"].sum()
-        out = base.merge(g, on=["sexo","faixa_etaria"], how="left")
-        out["populacao"] = out["populacao"].fillna(0)
-        return out
+        return _pad_cats_util(df, faixas_ordem)
     except Exception:
         return df
 
-def _fmt_br(n, decimals: int = 0) -> str:
-    """Formata número no padrão PT-BR (milhar com '.', decimal com ',').
-    Não altera os dados, apenas a exibição.
-    """
-    try:
-        if n is None or (isinstance(n, float) and pd.isna(n)):
-            return ""
-        # Garante float para formatação com casas decimais controladas
-        s = f"{float(n):,.{decimals}f}"
-        # Converte de 1,234,567.89 para 1.234.567,89
-        return s.replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        try:
-            # Tenta inteiro como fallback
-            s = f"{int(n):,}"
-            s = s.replace(",", ".")
-            if decimals > 0:
-                s = s + "," + ("0" * decimals)
-            return s
-        except Exception:
-            return str(n)
+# _fmt_br já foi importado de censo_app.formatting
 
-def _normalize_age_label(lbl: str) -> str:
-    """Normaliza rótulos de faixa etária para o formato canônico do config.
-    Exemplos:
-      '30 a 34' -> '30 a 34 anos'
-      '70+' ou '70 ou mais' -> '70 anos ou mais'
-      '0-4 anos' -> '0 a 4 anos'
-    """
-    try:
-        import re
-        s = str(lbl).strip()
-        s = s.replace("–", "-").replace("—", "-")
-        # Troca separadores comuns por ' a '
-        s = re.sub(r"\s*-\s*", " a ", s)
-        # Captura faixas 'A a B'
-        m = re.search(r"(\d+)\s*a\s*(\d+)", s)
-        if m:
-            a, b = int(m.group(1)), int(m.group(2))
-            return f"{a} a {b} anos"
-        # Captura 'N+' ou 'N ou mais'
-        m = re.search(r"(\d+)\s*(\+|anos?\s*ou\s*mais|ou\s*mais)", s, re.IGNORECASE)
-        if m:
-            n = int(m.group(1))
-            return f"{n} anos ou mais"
-        # Se só tem um número, tenta inferir como 'ou mais' para >=70
-        m = re.search(r"(\d+)", s)
-        if m:
-            n = int(m.group(1))
-            if n >= 70:
-                return f"{n} anos ou mais"
-        return s
-    except Exception:
-        return str(lbl)
+_normalize_age_label = _normalize_age_label
+
+def _sanitize_title(title: str | None) -> str:
+    return _sanitize_title_shared(title)
 
 def create_abnt_demographic_table(df_plot, title_suffix=""):
-    """
-    Cria tabela demográfica em padrão ABNT
-    
-    Estrutura:
-    - Linhas: Faixas etárias
-    - Colunas: Masculino | Feminino | Total | % Masculino | % Feminino
-    """
-    # Agrupar dados por faixa etária e sexo
-    pivot_data = df_plot.pivot_table(
-        index='faixa_etaria', 
-        columns='sexo', 
-        values='populacao', 
-        aggfunc='sum', 
-        fill_value=0
-    ).reset_index()
-    
-    # Garantir que as colunas existam
-    if 'Masculino' not in pivot_data.columns:
-        pivot_data['Masculino'] = 0
-    if 'Feminino' not in pivot_data.columns:
-        pivot_data['Feminino'] = 0
-    
-    # Calcular totais e percentuais
-    pivot_data['Total'] = pivot_data['Masculino'] + pivot_data['Feminino']
-    
-    # Calcular percentuais apenas onde Total > 0
-    mask = pivot_data['Total'] > 0
-    pivot_data['% Masculino'] = 0.0
-    pivot_data['% Feminino'] = 0.0
-    pivot_data.loc[mask, '% Masculino'] = (pivot_data.loc[mask, 'Masculino'] / pivot_data.loc[mask, 'Total'] * 100).round(1)
-    pivot_data.loc[mask, '% Feminino'] = (pivot_data.loc[mask, 'Feminino'] / pivot_data.loc[mask, 'Total'] * 100).round(1)
-    
-    # Reordenar colunas para padrão ABNT
-    abnt_table = pivot_data[['faixa_etaria', 'Masculino', 'Feminino', 'Total', '% Masculino', '% Feminino']].copy()
-    
-    # Renomear coluna para padrão ABNT
-    abnt_table = abnt_table.rename(columns={'faixa_etaria': 'Faixa Etária'})
-    
-    # Ordenar por faixa etária com fallback robusto:
-    # 1) Usa ordem explícita do config quando disponível.
-    # 2) Caso contrário, tenta extrair o limite inferior numérico (ex.: 30 a 39 -> 30; 70+ -> 70).
     faixas_ordem = DEMOG_CFG.get('age_buckets_order', [
         "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
-        "20 a 24 anos", "25 a 29 anos", "30 a 34 anos", "35 a 39 anos",
-        "40 a 44 anos", "45 a 49 anos", "50 a 54 anos", "55 a 59 anos",
-        "60 a 64 anos", "65 a 69 anos", "70 anos ou mais"
+        "20 a 24 anos", "25 a 29 anos", "30 a 39 anos", "40 a 49 anos",
+        "50 a 59 anos", "60 a 69 anos", "70 anos ou mais"
     ])
-
-    def _ordem_faixa(lbl: str) -> int:
-        try:
-            # 1) Ordem explícita
-            if lbl in faixas_ordem:
-                return faixas_ordem.index(lbl)
-            # 2) Fallback: extrair número
-            import re
-            # Intervalo "X a Y"
-            m = re.search(r"(\d+)\s*a\s*(\d+)", str(lbl))
-            if m:
-                return int(m.group(1))
-            # "X anos ou mais"
-            m = re.search(r"(\d+)\s*anos?\s*ou\s*mais", str(lbl), re.IGNORECASE)
-            if m:
-                return int(m.group(1))
-            # Último recurso: primeiro número encontrado
-            m = re.search(r"(\d+)", str(lbl))
-            if m:
-                return int(m.group(1))
-        except Exception:
-            pass
-        # Mantém no final se nada funcionar
-        return 99999
-
-    abnt_table['ordem'] = abnt_table['Faixa Etária'].apply(_ordem_faixa)
-    abnt_table = abnt_table.sort_values(['ordem', 'Faixa Etária']).drop('ordem', axis=1)
-    
-    # Adicionar linha de totais
-    total_masculino = abnt_table['Masculino'].sum()
-    total_feminino = abnt_table['Feminino'].sum()
-    total_geral = abnt_table['Total'].sum()
-    
-    total_row = {
-        'Faixa Etária': 'TOTAL',
-        'Masculino': total_masculino,
-        'Feminino': total_feminino,
-        'Total': total_geral,
-        '% Masculino': (total_masculino / total_geral * 100).round(1) if total_geral > 0 else 0,
-        '% Feminino': (total_feminino / total_geral * 100).round(1) if total_geral > 0 else 0
-    }
-    
-    abnt_table = pd.concat([abnt_table, pd.DataFrame([total_row])], ignore_index=True)
-    
-    # Reset index para garantir que não há índices duplicados
-    abnt_table = abnt_table.reset_index(drop=True)
-    
-    return abnt_table
+    return _build_abnt_table(df_plot, faixas_ordem)
 
 # RM/AU agora são enriquecidas no transform.py a partir do Excel diretamente
 
-def make_age_pyramid(df_plot, title="Pirâmide Etária"):
-    """Criar gráfico de pirâmide etária usando Plotly"""
-    import plotly.graph_objects as go
-    
-    # Separar dados por sexo
-    df_masc = df_plot[df_plot['sexo'] == 'Masculino'].copy()
-    df_fem = df_plot[df_plot['sexo'] == 'Feminino'].copy()
-    
-    # Fazer valores masculinos negativos para pirâmide
-    df_masc['populacao'] = -df_masc['populacao']
-    
-    fig = go.Figure()
-    
-    # Lado masculino (esquerda)
-    fig.add_trace(go.Bar(
-        y=df_masc['faixa_etaria'],
-        x=df_masc['populacao'],
-        orientation='h',
-        name='Masculino',
-        marker=dict(color='blue'),
-        text=df_masc['populacao'].abs(),
-        textposition='auto'
-    ))
-    
-    # Lado feminino (direita)
-    fig.add_trace(go.Bar(
-        y=df_fem['faixa_etaria'],
-        x=df_fem['populacao'],
-        orientation='h',
-        name='Feminino',
-        marker=dict(color='pink'),
-        text=df_fem['populacao'],
-        textposition='auto'
-    ))
-    
-    fig.update_layout(
-    title=title,
-        xaxis_title="População",
-        yaxis_title="Faixa Etária",
-        barmode='overlay',
-        height=520,
-        margin=dict(l=40, r=10, t=40, b=10),
-    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-    bargap=0.15,
-    bargroupgap=0.05,
-    )
-    # Força ordem e presença consistente das categorias por faixa etária
-    try:
-        faixas_ordem = DEMOG_CFG.get('age_buckets_order', [
-            "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
-            "20 a 24 anos", "25 a 29 anos", "30 a 39 anos", "40 a 49 anos",
-            "50 a 59 anos", "60 a 69 anos", "70 anos ou mais"
-        ])
-        fig.update_yaxes(categoryorder='array', categoryarray=faixas_ordem)
-    except Exception:
-        pass
-    
-    return fig
+# Removido helper local make_age_pyramid (não utilizado; usamos censo_app.viz.make_age_pyramid)
 
-st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
-render_topbar(title="Explorador de Dados Censitários", subtitle="Censo 2022 — SP")
-st.title("Demografia")
+UI_CFG = get_page_config('demografia_ui') or {}
+st.set_page_config(layout="wide", initial_sidebar_state=UI_CFG.get('layout', {}).get('initial_sidebar_state', 'collapsed'))
+tb = UI_CFG.get('topbar', {})
+_renderizar_barra_superior(title=tb.get('title', "Explorador de Dados Censitários"), subtitle=tb.get('subtitle', "Censo 2022 — SP"))
+st.title(UI_CFG.get('title', "Demografia"))
 
 # CSS: destacar selects como "botões" e permitir quebras em labels/títulos
 st.markdown(
@@ -327,6 +158,12 @@ st.markdown(
         overflow-wrap: anywhere;
         word-break: break-word;
     }
+    /* ABNT: wrapper e legendas padronizadas para gráficos */
+    .abnt-figure { max-width: 16cm; margin: 0.25rem auto 0.25rem auto; }
+    .abnt-caption { text-align: center; font-weight: 700; font-size: 11pt; line-height: 1.2; height: 48px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+    .abnt-source { font-size: 10pt; text-align: left; margin-top: 6px; }
+    /* Limitar e centralizar gráficos Plotly para até 16cm */
+    .stPlotlyChart { max-width: 16cm; margin-left: auto; margin-right: auto; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -338,12 +175,7 @@ def _norm(s: str) -> str:
     return (s or "").strip().strip('"').strip("'").replace("\\", "/")
 
 def _wrap_title(texto: str, width: int = 42) -> str:
-    try:
-        import textwrap
-        parts = textwrap.wrap(str(texto), width=width)
-        return "<br>".join(parts) if parts else str(texto)
-    except Exception:
-        return str(texto)
+    return _wrap_title_shared(texto, width)
 
 settings = get_settings()
 parquet_path = _norm(settings.get('paths', {}).get('parquet_default', r"D:\\repo\\saida_parquet\\base_integrada_final.parquet"))
@@ -502,10 +334,19 @@ except Exception as e:
     st.error(f"❌ Erro na conversão para formato long: {e}")
     st.stop()
 
+# Sanitização ampla de rótulos para remover 'undefined'/vazios antes dos filtros
+def _clean_label(val: object) -> object:
+    v = _clean_label_shared(val)
+    return pd.NA if v is None else v
+
+for _col in ["NOME_RM_AU", "TIPO_RM_AU", "RM_NOME", "AU_NOME", "NM_MUN", "NM_RGI", "NM_RGINT", "faixa_etaria"]:
+    if _col in df_long.columns:
+        df_long[_col] = df_long[_col].apply(_clean_label)
+
 # Sem diagnósticos internos
 
 st.divider()
-st.subheader("🔍 Filtros Básicos")
+st.subheader(UI_CFG.get('labels', {}).get('filters_title', "🔍 Filtros Básicos"))
 
 # Layout de filtros em colunas
 c1, c2, c3 = st.columns(3)
@@ -514,20 +355,23 @@ c1, c2, c3 = st.columns(3)
 with c1:
     if "SITUACAO" in df_long.columns:
         sit_opts = sorted([x for x in df_long["SITUACAO"].dropna().unique() if x in ("Urbana", "Rural")])
-        default_sit = ["Urbana"]  # Padrão: apenas Urbana
-        sel_situacao = st.multiselect("Situação", sit_opts, default=default_sit, key="fil_situacao_demog")
-        if sel_situacao:
-            df_long = df_long[df_long["SITUACAO"].isin(sel_situacao)]
+    else:
+        sit_opts = []
+    # Default: selecionar todas as situações disponíveis (Urbana e Rural) quando existir
+    default_sit = sit_opts if sit_opts else UI_CFG.get('defaults', {}).get('situacao', ["Urbana","Rural"])  # via YAML se desejar
+    sel_situacao = st.multiselect(UI_CFG.get('filters', {}).get('situacao_label', "Situação"), sit_opts, default=default_sit, key="fil_situacao_demog")
+    if sel_situacao:
+        df_long = df_long[df_long["SITUACAO"].isin(sel_situacao)]
 
 # Filtro 2: Tipo de Setor (padrão: 0 e 1)
 with c2:
     if "CD_TIPO" in df_long.columns:
-        # Mostrar sempre os 10 tipos, mesmo que não existam no recorte carregado
+        # Mostrar sempre os 10 tipos previstos
         tipo_opts = [(k, TIPO_MAP.get(k, str(k))) for k in sorted(TIPO_MAP.keys())]
-        default_tipo = [0, 1]  # Padrão: Não especial e Favela/Comunidade
-        default_items = [item for item in tipo_opts if item[0] in default_tipo]
+        # Default: selecionar todos os tipos
+        default_items = tipo_opts
         sel_tipo = st.multiselect(
-            "Tipo de Setor",
+            UI_CFG.get('filters', {}).get('tipo_setor_label', "Tipo de Setor"),
             tipo_opts,
             default=default_items,
             format_func=lambda x: f"{x[0]} — {x[1]}",
@@ -540,16 +384,16 @@ with c2:
 with c3:
     # Preferir colunas unificadas
     if "NOME_RM_AU" in df_long.columns and "TIPO_RM_AU" in df_long.columns:
-        pairs = (
+        _opts = (
             df_long[["TIPO_RM_AU","NOME_RM_AU"]]
             .dropna()
+            .assign(TIPO_RM_AU=lambda d: d["TIPO_RM_AU"].astype(str).str.upper())
             .drop_duplicates()
-            .sort_values(["TIPO_RM_AU","NOME_RM_AU"])
-            .itertuples(index=False, name=None)
+            .sort_values(["TIPO_RM_AU","NOME_RM_AU"])  # type: ignore
         )
-        options = [f"{t} — {n}" for t, n in pairs]
+        options = [f"{t} — {n}" for t, n in _opts.itertuples(index=False, name=None)]
         options = ["Todas"] + options
-        sel_pairs = st.multiselect("RM/AU", options, default=["Todas"], key="fil_rm_au_demog")
+        sel_pairs = st.multiselect(UI_CFG.get('filters', {}).get('rm_au_label', "RM/AU"), options, default=["Todas"], key="fil_rm_au_demog")
         if "Todas" not in sel_pairs and sel_pairs:
             mask = pd.Series([False] * len(df_long))
             for s in sel_pairs:
@@ -557,18 +401,22 @@ with c3:
                     tipo, nome = s.split(" — ", 1)
                 except ValueError:
                     continue
-                mask |= (df_long["TIPO_RM_AU"] == tipo) & (df_long["NOME_RM_AU"] == nome)
+                mask |= (df_long["TIPO_RM_AU"].astype(str).str.upper() == tipo.upper()) & (df_long["NOME_RM_AU"] == nome)
             df_long = df_long[mask]
     else:
         rm_au_options = []
         if "RM_NOME" in df_long.columns:
-            rms = [f"RM: {x}" for x in sorted(df_long["RM_NOME"].dropna().unique())]
+            _rms = pd.Series(df_long["RM_NOME"]).dropna().astype(str)
+            _rms = _rms[~_rms.str.strip().str.lower().isin(["undefined","nan","none","null",""])]
+            rms = [f"RM: {x}" for x in sorted(_rms.unique())]
             rm_au_options.extend(rms)
         if "AU_NOME" in df_long.columns:
-            aus = [f"AU: {x}" for x in sorted(df_long["AU_NOME"].dropna().unique())]
+            _aus = pd.Series(df_long["AU_NOME"]).dropna().astype(str)
+            _aus = _aus[~_aus.str.strip().str.lower().isin(["undefined","nan","none","null",""])]
+            aus = [f"AU: {x}" for x in sorted(_aus.unique())]
             rm_au_options.extend(aus)
         if rm_au_options:
-            sel_rm_au_filter = st.multiselect("RM/AU", ["Todas"] + rm_au_options,
+            sel_rm_au_filter = st.multiselect(UI_CFG.get('filters', {}).get('rm_au_label', "RM/AU"), ["Todas"] + rm_au_options,
                                               default=["Todas"], key="fil_rm_au_demog")
             if "Todas" not in sel_rm_au_filter and sel_rm_au_filter:
                 cond = pd.Series([False] * len(df_long))
@@ -581,10 +429,10 @@ with c3:
                         cond |= (df_long["AU_NOME"] == au_name)
                 df_long = df_long[cond]
 
-st.write(f"**Dados filtrados:** {len(df_long):,} registros")
+st.write(f"{UI_CFG.get('labels', {}).get('filtered_count_prefix', '**Dados filtrados:**')} {len(df_long):,} registros")
 
 st.divider()
-st.subheader("📊 Análise Demográfica")
+st.subheader(UI_CFG.get('labels', {}).get('analysis_title', "📊 Análise Demográfica"))
 
 # Helpers para opções
 def _mk_municipios(df: pd.DataFrame) -> pd.DataFrame:
@@ -592,28 +440,32 @@ def _mk_municipios(df: pd.DataFrame) -> pd.DataFrame:
     return df[cols].dropna().drop_duplicates().sort_values(["NM_MUN","CD_MUN"]) if all(c in df.columns for c in cols) else pd.DataFrame(columns=cols)
 
 def _mk_rm_au_options(df: pd.DataFrame) -> pd.DataFrame:
-    if {"TIPO_RM_AU","NOME_RM_AU"}.issubset(df.columns):
-        out = (
-            df[["TIPO_RM_AU","NOME_RM_AU"]]
-            .dropna()
-            .drop_duplicates()
-            .sort_values(["TIPO_RM_AU","NOME_RM_AU"]))
-        out["LABEL"] = out["TIPO_RM_AU"].astype(str).str.upper() + " — " + out["NOME_RM_AU"].astype(str)
+    """Constrói opções limpas de RM/AU, sem rótulos vazios/undefined."""
+    if {"TIPO_RM_AU", "NOME_RM_AU"}.issubset(df.columns):
+        out = df[["TIPO_RM_AU", "NOME_RM_AU"]].copy()
+        out["TIPO_RM_AU"] = out["TIPO_RM_AU"].apply(_clean_label).astype(str).str.upper()
+        out["NOME_RM_AU"] = out["NOME_RM_AU"].apply(_clean_label)
+        out = out.dropna().drop_duplicates().sort_values(["TIPO_RM_AU", "NOME_RM_AU"]).reset_index(drop=True)  # type: ignore
+        out["LABEL"] = out["TIPO_RM_AU"] + " — " + out["NOME_RM_AU"].astype(str)
         return out
     frames = []
     if "RM_NOME" in df.columns:
-        a = df[["RM_NOME"]].dropna().drop_duplicates().rename(columns={"RM_NOME":"NOME"})
+        a = df[["RM_NOME"]].copy()
+        a["RM_NOME"] = a["RM_NOME"].apply(_clean_label)
+        a = a.dropna().drop_duplicates().rename(columns={"RM_NOME": "NOME"})
         a["TIPO"] = "RM"
         frames.append(a)
     if "AU_NOME" in df.columns:
-        b = df[["AU_NOME"]].dropna().drop_duplicates().rename(columns={"AU_NOME":"NOME"})
+        b = df[["AU_NOME"]].copy()
+        b["AU_NOME"] = b["AU_NOME"].apply(_clean_label)
+        b = b.dropna().drop_duplicates().rename(columns={"AU_NOME": "NOME"})
         b["TIPO"] = "AU"
         frames.append(b)
     if not frames:
-        return pd.DataFrame(columns=["TIPO_RM_AU","NOME_RM_AU","LABEL"])    
+        return pd.DataFrame(columns=["TIPO_RM_AU", "NOME_RM_AU", "LABEL"])
     c = pd.concat(frames, ignore_index=True)
-    c = c.dropna().drop_duplicates().sort_values(["TIPO","NOME"]).reset_index(drop=True)
-    c = c.rename(columns={"TIPO":"TIPO_RM_AU","NOME":"NOME_RM_AU"})
+    c = c.dropna().drop_duplicates().sort_values(["TIPO", "NOME"]).reset_index(drop=True)
+    c = c.rename(columns={"TIPO": "TIPO_RM_AU", "NOME": "NOME_RM_AU"})
     c["LABEL"] = c["TIPO_RM_AU"] + " — " + c["NOME_RM_AU"].astype(str)
     return c
 
@@ -629,7 +481,14 @@ if has_rgint: scale_options.append("Região Intermediária")
 if has_rgi: scale_options.append("Região Imediata")
 if has_mun: scale_options.append("Município")
 if has_setor: scale_options.append("Setores")
-nivel = st.selectbox("Escala de Análise", options=scale_options, index=0, key="nivel_demog")
+nivel = st.selectbox(UI_CFG.get('filters', {}).get('escala_label', "Escala de Análise"), options=scale_options, index=0, key="nivel_demog")
+
+# Seleção por escala
+comp_available = False  # controla se há comparador válido para o layout
+
+# Inicializa comparador da execução atual
+df_comp_plot = None
+comp_title = None
 
 # Seleção por escala
 if nivel == "Estado":
@@ -641,7 +500,7 @@ elif nivel == "RM/AU" and has_rm_au:
     if rmau_df.empty:
         st.error("❌ Nenhuma RM/AU disponível nos dados filtrados")
         st.stop()
-    sel = st.selectbox("Região (RM/AU) — selecione ou digite", options=rmau_df.index.tolist(), format_func=lambda i: rmau_df.loc[i, "LABEL"], key="sel_rmau_analysis")
+    sel = st.selectbox(UI_CFG.get('labels', {}).get('select_region_rmau', "Região (RM/AU) — selecione ou digite"), options=rmau_df.index.tolist(), format_func=lambda i: rmau_df.loc[i, "LABEL"], key="sel_rmau_analysis")
     rec = rmau_df.loc[sel]
     if {"TIPO_RM_AU","NOME_RM_AU"}.issubset(df_long.columns):
         mask = (df_long["TIPO_RM_AU"].astype(str).str.upper()==str(rec["TIPO_RM_AU"]).upper()) & (df_long["NOME_RM_AU"]==rec["NOME_RM_AU"])    
@@ -657,13 +516,13 @@ elif nivel == "RM/AU" and has_rm_au:
 
 elif nivel == "Região Intermediária" and has_rgint:
     rgints = sorted([x for x in df_long["NM_RGINT"].dropna().unique().tolist()])
-    sel_rgint = st.selectbox("Região Intermediária — selecione ou digite", rgints, key="sel_rgint_analysis")
+    sel_rgint = st.selectbox(UI_CFG.get('labels', {}).get('select_region_rgint', "Região Intermediária — selecione ou digite"), rgints, key="sel_rgint_analysis")
     df_analysis = df_long[df_long["NM_RGINT"]==sel_rgint]
     title_suffix = f"Região Intermediária — {sel_rgint}"
 
 elif nivel == "Região Imediata" and has_rgi:
     rgis = sorted([x for x in df_long["NM_RGI"].dropna().unique().tolist()])
-    sel_rgi = st.selectbox("Região Imediata — selecione ou digite", rgis, key="sel_rgi_analysis")
+    sel_rgi = st.selectbox(UI_CFG.get('labels', {}).get('select_region_rgi', "Região Imediata — selecione ou digite"), rgis, key="sel_rgi_analysis")
     df_analysis = df_long[df_long["NM_RGI"]==sel_rgi]
     title_suffix = f"Região Imediata — {sel_rgi}"
 
@@ -673,14 +532,25 @@ elif nivel in ("Município","Setores") and has_mun:
         st.error("❌ Nenhum município disponível nos dados filtrados")
         st.stop()
     name_map = dict(zip(mun_df["CD_MUN"], mun_df["NM_MUN"]))
-    _fmt = lambda c: "— selecione ou digite —" if c is None else (str(c) + " — " + (name_map.get(c, "") or ""))
-    sel_mun = st.selectbox("Município — selecione ou digite", options=[None]+mun_df["CD_MUN"].tolist(), format_func=_fmt, key="sel_mun_analysis")
+    def _fmt(c):
+        if c is None:
+            return "— selecione ou digite —"
+        val = name_map.get(c, "")
+        try:
+            import pandas as _pd
+            if _pd.isna(val):
+                val = ""
+        except Exception:
+            # Fallback simples caso pandas não esteja disponível
+            val = "" if str(val).lower() in ("nan","none","undefined") else val
+        return f"{c} — {val}"
+    sel_mun = st.selectbox(UI_CFG.get('labels', {}).get('select_municipio', "Município — selecione ou digite"), options=[None]+mun_df["CD_MUN"].tolist(), format_func=_fmt, key="sel_mun_analysis")
     if sel_mun is None:
         st.info("Selecione ou digite um município para continuar.")
         st.stop()
     df_scope = df_long[df_long["CD_MUN"]==sel_mun]
     if nivel == "Município":
-        desag = st.checkbox("Desagregar por setores do município", value=False, key="mun_desag_demog")
+        desag = st.checkbox(UI_CFG.get('labels', {}).get('checkbox_desag_mun', "Desagregar por setores do município"), value=False, key="mun_desag_demog")
         if not desag:
             df_analysis = df_scope
             title_suffix = _fmt(sel_mun)
@@ -723,6 +593,8 @@ elif nivel in ("Município","Setores") and has_mun:
                             comp_title = "Estado de São Paulo"
                         if not df_comp_base.empty:
                             df_comp_plot = _aggregate_local(df_comp_base)
+                            comp_available = True
+                        comp_title = _sanitize_title(comp_title)
                         prog.progress(100)
                         st_status.update(label=f"Comparador: {comp_title}", state="complete")
                     except Exception:
@@ -757,8 +629,11 @@ elif nivel in ("Município","Setores") and has_mun:
                         comp_title = "Estado de São Paulo"
                     if not df_comp_base.empty:
                         df_comp_plot = _aggregate_local(df_comp_base)
+                        comp_available = True
+                    comp_title = _sanitize_title(comp_title)
                 except Exception:
                     df_comp_plot = None
+                    comp_available = False
         else:
             if not has_setor:
                 st.error("❌ Colunas de setor não disponíveis")
@@ -767,7 +642,7 @@ elif nivel in ("Município","Setores") and has_mun:
             if len(setor_options)==0:
                 st.error("❌ Nenhum setor disponível para o município selecionado")
                 st.stop()
-            sel_setor = st.selectbox("Setor do Município — selecione ou digite", options=setor_options, key="sel_setor_mun_analysis")
+            sel_setor = st.selectbox(UI_CFG.get('labels', {}).get('select_setor_mun', "Setor do Município — selecione ou digite"), options=setor_options, key="sel_setor_mun_analysis")
             df_analysis = df_scope[df_scope["CD_SETOR"]==sel_setor]
             title_suffix = f"Setor {sel_setor} — {_fmt(sel_mun)}"
     else:
@@ -778,7 +653,7 @@ elif nivel in ("Município","Setores") and has_mun:
         if len(setor_options)==0:
             st.error("❌ Nenhum setor disponível para o município selecionado")
             st.stop()
-        sel_setor = st.selectbox("Setor — selecione ou digite", options=setor_options, key="sel_setor_analysis")
+        sel_setor = st.selectbox(UI_CFG.get('labels', {}).get('select_setor', "Setor — selecione ou digite"), options=setor_options, key="sel_setor_analysis")
         df_analysis = df_scope[df_scope["CD_SETOR"]==sel_setor]
         title_suffix = f"Setor {sel_setor} — {_fmt(sel_mun)}"
 else:
@@ -788,8 +663,17 @@ else:
 # Agregação dos dados para visualização
 df_plot = _aggregate_local(df_analysis)
 
-# Padroniza categorias de faixas etárias para os dois gráficos ficarem com a mesma altura/linhas
+# Padroniza e restringe categorias de faixas etárias ao conjunto canônico
 df_plot = _pad_pyramid_categories(df_plot)
+try:
+    _faixas_can = DEMOG_CFG.get('age_buckets_order', [
+        "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
+        "20 a 24 anos", "25 a 29 anos", "30 a 39 anos", "40 a 49 anos",
+        "50 a 59 anos", "60 a 69 anos", "70 anos ou mais"
+    ])
+    df_plot = df_plot[df_plot["faixa_etaria"].isin(_faixas_can)]
+except Exception:
+    pass
 
 if df_plot.empty:
     st.warning("⚠️ Nenhum dado disponível para os filtros selecionados")
@@ -799,88 +683,150 @@ if df_plot.empty:
         st.write("Amostra:", df_analysis.head())
     st.stop()
 
-# Layout em colunas para visualizações
-if 'df_comp_plot' in locals() and df_comp_plot is not None and isinstance(df_comp_plot, pd.DataFrame) and not df_comp_plot.empty:
-    col_left, col_mid, col_right = st.columns([2, 2, 1])
+"""
+Renderização dos gráficos com legendas ABNT, altura fixa do bloco de título e borda.
+"""
+# Guardar legendas exibidas para compor uma Lista de Figuras (recomendação ABNT)
+fig_captions: list[str] = []
+
+if comp_available and 'df_comp_plot' in locals() and isinstance(df_comp_plot, pd.DataFrame) and not df_comp_plot.empty:
+    # Apenas duas colunas para as pirâmides; resumo vai para baixo
+    col_left, col_mid = st.columns(2)
+
     with col_left:
-        st.subheader("🔺 Pirâmide — Município")
+        _left_hdr = UI_CFG.get('labels', {}).get('municipio_pyramid', "Pirâmide Etária — Município")
+        _left_title = _sanitize_title(title_suffix)
+        _left_caption = f"Figura 1 — {_left_hdr}: {_left_title}"
+        fig_captions.append(_left_caption)
+        st.markdown(f"<div class='abnt-figure'><div class='abnt-caption'><strong>{_left_caption}</strong></div></div>", unsafe_allow_html=True)
         try:
-            fig = _make_age_pyramid(df_plot.rename(columns={"faixa_etaria":"idade_grupo","populacao":"valor"}), title=_wrap_title(f"{title_suffix}"))
-            try:
-                fig.update_layout(showlegend=False, yaxis_title="", title=None)
-                fig.update_traces(text=None)
-            except Exception:
-                pass
+            fig = _construir_piramide(
+                df_plot.rename(columns={"faixa_etaria": "idade_grupo", "populacao": "valor"}),
+                title=_wrap_title(f"{_left_title}")
+            )
+            fig.update_layout(
+                showlegend=False,
+                yaxis_title=None,
+                title=None,
+                title_text=None,
+                shapes=[dict(type='rect', x0=0, y0=0, x1=1, y1=1, xref='paper', yref='paper',
+                             line=dict(color='black', width=2), fillcolor='rgba(0,0,0,0)')]
+            )
+            fig.update_traces(text=None, hovertemplate="Faixa: %{y}<br>População: %{x:,}")
         except Exception:
             fig = go.Figure()
         st.plotly_chart(fig, use_container_width=True)
+    st.markdown(f"<div class='abnt-figure'><div class='abnt-source'>{UI_CFG.get('labels', {}).get('source_text_chart', 'Fonte: IBGE')}</div></div>", unsafe_allow_html=True)
+
     with col_mid:
-        st.subheader("🔺 Pirâmide — Comparador (em %)")
+        _mid_hdr = UI_CFG.get('labels', {}).get('comparator_pyramid', "Pirâmide Etária — Comparador (em %)")
+        _mid_title = _sanitize_title(locals().get('comp_title', None))
+        _mid_caption = f"Figura 2 — {_mid_hdr}: {_mid_title}"
+        fig_captions.append(_mid_caption)
+        st.markdown(f"<div class='abnt-figure'><div class='abnt-caption'><strong>{_mid_caption}</strong></div></div>", unsafe_allow_html=True)
         try:
-            # Converter dados do comparador para porcentagens do total do comparador
             _dfc = _pad_pyramid_categories(df_comp_plot.copy())
             try:
-                _totalc = float(_dfc["populacao"].sum())
-            except Exception:
-                _totalc = 0.0
-            if _totalc > 0:
-                _dfc["populacao"] = (_dfc["populacao"].astype(float) / _totalc) * 100.0
-            else:
-                _dfc["populacao"] = 0.0
-            figc = _make_age_pyramid(_dfc.rename(columns={"faixa_etaria":"idade_grupo","populacao":"valor"}), title=_wrap_title(f"{comp_title}"))
-            # Ajustes visuais: eixo em %, sem rótulos Y e sem legenda; texto nos bares suprimido
-            try:
-                figc.update_yaxes(showticklabels=False, title_text="")
-                figc.update_xaxes(ticksuffix="%", title_text="% da População")
-                figc.update_layout(showlegend=False, title=None)
-                figc.update_traces(text=None)
-                try:
-                    faixas_ordem = DEMOG_CFG.get('age_buckets_order', [
-                        "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
-                        "20 a 24 anos", "25 a 29 anos", "30 a 39 anos", "40 a 49 anos",
-                        "50 a 59 anos", "60 a 69 anos", "70 anos ou mais"
-                    ])
-                    figc.update_yaxes(categoryorder='array', categoryarray=faixas_ordem)
-                except Exception:
-                    pass
+                _dfc = _dfc[_dfc["faixa_etaria"].isin(_faixas_can)]
             except Exception:
                 pass
+            _totalc = float(_dfc["populacao"].sum()) if not _dfc.empty else 0.0
+            _dfc["populacao"] = (_dfc["populacao"].astype(float) / _totalc * 100.0) if _totalc > 0 else 0.0
+            figc = _construir_piramide(
+                _dfc.rename(columns={"faixa_etaria": "idade_grupo", "populacao": "valor"}),
+                title=_wrap_title(f"{_mid_title}")
+            )
+            figc.update_yaxes(showticklabels=False, title_text=None)
+            figc.update_xaxes(ticksuffix="%", title_text="% da População")
+            figc.update_layout(
+                showlegend=False,
+                title=None,
+                title_text=None,
+                shapes=[dict(type='rect', x0=0, y0=0, x1=1, y1=1, xref='paper', yref='paper',
+                             line=dict(color='black', width=2), fillcolor='rgba(0,0,0,0)')]
+            )
+            try:
+                faixas_ordem = DEMOG_CFG.get('age_buckets_order', [
+                    "0 a 4 anos", "5 a 9 anos", "10 a 14 anos", "15 a 19 anos",
+                    "20 a 24 anos", "25 a 29 anos", "30 a 39 anos", "40 a 49 anos",
+                    "50 a 59 anos", "60 a 69 anos", "70 anos ou mais"
+                ])
+                figc.update_yaxes(categoryorder='array', categoryarray=faixas_ordem)
+            except Exception:
+                pass
+            figc.update_traces(text=None, hovertemplate="Faixa: %{y}<br>% População: %{x:.1f}%")
         except Exception:
             figc = go.Figure()
         st.plotly_chart(figc, use_container_width=True)
-    with col_right:
-        st.subheader("📈 Resumo Populacional (Município)")
+    st.markdown(f"<div class='abnt-figure'><div class='abnt-source'>{UI_CFG.get('labels', {}).get('source_text_chart', 'Fonte: IBGE')}</div></div>", unsafe_allow_html=True)
+
+    # Resumos abaixo das pirâmides: município e comparador
+    st.markdown("\n")
+    st.subheader(UI_CFG.get('labels', {}).get('population_summary_both', "📈 Resumo Populacional"))
+    s1, s2 = st.columns(2)
+    with s1:
+        st.markdown("**Município**")
         total_pop = int(df_plot["populacao"].sum())
         pop_masc = int(df_plot[df_plot["sexo"] == "Masculino"]["populacao"].sum())
         pop_fem = int(df_plot[df_plot["sexo"] == "Feminino"]["populacao"].sum())
         st.metric("População Total", _fmt_br(total_pop, 0))
         st.metric("População Masculina", _fmt_br(pop_masc, 0), f"{_fmt_br(pop_masc/total_pop*100, 1)}%" if total_pop > 0 else None)
         st.metric("População Feminina", _fmt_br(pop_fem, 0), f"{_fmt_br(pop_fem/total_pop*100, 1)}%" if total_pop > 0 else None)
+    with s2:
+        st.markdown(f"**Comparador — {_sanitize_title(locals().get('comp_title', None))}**")
+        if isinstance(df_comp_plot, pd.DataFrame) and not df_comp_plot.empty:
+            _totc2 = int(df_comp_plot["populacao"].sum())
+            _masc2 = int(df_comp_plot[df_comp_plot["sexo"] == "Masculino"]["populacao"].sum())
+            _fem2 = int(df_comp_plot[df_comp_plot["sexo"] == "Feminino"]["populacao"].sum())
+            st.metric("População Total", _fmt_br(_totc2, 0))
+            st.metric("População Masculina", _fmt_br(_masc2, 0), f"{_fmt_br(_masc2/_totc2*100, 1)}%" if _totc2 > 0 else None)
+            st.metric("População Feminina", _fmt_br(_fem2, 0), f"{_fmt_br(_fem2/_totc2*100, 1)}%" if _totc2 > 0 else None)
+        else:
+            st.info("Sem comparador disponível para este recorte.")
+
 else:
-    col_left, col_right = st.columns([2, 1])
-    with col_left:
-        st.subheader("🔺 Pirâmide Etária")
-        try:
-            fig = _make_age_pyramid(df_plot.rename(columns={"faixa_etaria":"idade_grupo","populacao":"valor"}), title=_wrap_title(f"Demografia — {title_suffix}"))
-            try:
-                fig.update_layout(showlegend=False, yaxis_title="", title=None)
-                fig.update_traces(text=None)
-            except Exception:
-                pass
-        except Exception:
-            fig = go.Figure()
-        st.plotly_chart(fig, use_container_width=True)
-    with col_right:
-        st.subheader("📈 Resumo Populacional")
-        total_pop = int(df_plot["populacao"].sum())
-        pop_masc = int(df_plot[df_plot["sexo"] == "Masculino"]["populacao"].sum())
-        pop_fem = int(df_plot[df_plot["sexo"] == "Feminino"]["populacao"].sum())
-        st.metric("População Total", _fmt_br(total_pop, 0))
-        st.metric("População Masculina", _fmt_br(pop_masc, 0), f"{_fmt_br(pop_masc/total_pop*100, 1)}%" if total_pop > 0 else None)
-        st.metric("População Feminina", _fmt_br(pop_fem, 0), f"{_fmt_br(pop_fem/total_pop*100, 1)}%" if total_pop > 0 else None)
+    # Uma única pirâmide com resumo abaixo
+    _single_hdr = UI_CFG.get('labels', {}).get('generic_pyramid', "Pirâmide Etária")
+    _single_title = _sanitize_title(title_suffix)
+    _single_caption = f"Figura 1 — {_single_hdr}: {_single_title}"
+    fig_captions.append(_single_caption)
+    st.markdown(f"<div class='abnt-figure'><div class='abnt-caption'><strong>{_single_caption}</strong></div></div>", unsafe_allow_html=True)
+    try:
+        fig = _construir_piramide(
+            df_plot.rename(columns={"faixa_etaria": "idade_grupo", "populacao": "valor"}),
+            title=_wrap_title(f"Demografia — {_single_title}")
+        )
+        fig.update_layout(
+            showlegend=False,
+            yaxis_title=None,
+            title=None,
+            title_text=None,
+            shapes=[dict(type='rect', x0=0, y0=0, x1=1, y1=1, xref='paper', yref='paper',
+                         line=dict(color='black', width=2), fillcolor='rgba(0,0,0,0)')]
+        )
+        fig.update_traces(text=None)
+    except Exception:
+        fig = go.Figure()
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown(f"<div class='abnt-figure'><div class='abnt-source'>{UI_CFG.get('labels', {}).get('source_text_chart', 'Fonte: IBGE')}</div></div>", unsafe_allow_html=True)
+
+    st.markdown("\n")
+    st.subheader(UI_CFG.get('labels', {}).get('population_summary', "📈 Resumo Populacional"))
+    total_pop = int(df_plot["populacao"].sum())
+    pop_masc = int(df_plot[df_plot["sexo"] == "Masculino"]["populacao"].sum())
+    pop_fem = int(df_plot[df_plot["sexo"] == "Feminino"]["populacao"].sum())
+    st.metric("População Total", _fmt_br(total_pop, 0))
+    st.metric("População Masculina", _fmt_br(pop_masc, 0), f"{_fmt_br(pop_masc/total_pop*100, 1)}%" if total_pop > 0 else None)
+    st.metric("População Feminina", _fmt_br(pop_fem, 0), f"{_fmt_br(pop_fem/total_pop*100, 1)}%" if total_pop > 0 else None)
+
+# Lista de Figuras (opcional)
+if fig_captions:
+    st.markdown(f"**{UI_CFG.get('labels', {}).get('list_of_figures_title', 'Lista de Figuras')}**")
+    for cap in fig_captions:
+        st.markdown(f"- {cap}")
 
 st.divider()
-st.subheader("📋 Tabela Demográfica")
+st.subheader(UI_CFG.get('labels', {}).get('table_title', "📋 Tabela Demográfica"))
 
 # Barra de progresso para montagem da tabela
 if hasattr(st, "status"):
@@ -959,42 +905,7 @@ else:
         except Exception:
             comp_table = None
 
-# Quando houver comparador, calcular diferenças proporcionais por faixa etária (pp)
-comp_table = None
-if 'df_comp_plot' in locals() and df_comp_plot is not None and isinstance(df_comp_plot, pd.DataFrame) and not df_comp_plot.empty:
-    try:
-        comp_table = create_abnt_demographic_table(_pad_pyramid_categories(df_comp_plot))
-        # % do Total (principal)
-        total_main = float(abnt_table.loc[abnt_table['Faixa Etária']=="TOTAL", 'Total'].iloc[0]) if not abnt_table.empty else 0.0
-        abnt_table['% do Total'] = abnt_table.apply(
-            lambda r: round((float(r['Total'])/total_main*100.0), 1) if r['Faixa Etária'] != 'TOTAL' and total_main>0 else (100.0 if r['Faixa Etária']=='TOTAL' else 0.0),
-            axis=1
-        )
-        # % do Total (comparador)
-        total_comp = float(comp_table.loc[comp_table['Faixa Etária']=="TOTAL", 'Total'].iloc[0]) if not comp_table.empty else 0.0
-        comp_pct = comp_table[['Faixa Etária','Total']].copy()
-        comp_pct['% do Total (Comp)'] = comp_pct.apply(
-            lambda r: round((float(r['Total'])/total_comp*100.0), 1) if r['Faixa Etária'] != 'TOTAL' and total_comp>0 else (100.0 if r['Faixa Etária']=='TOTAL' else 0.0),
-            axis=1
-        )
-        comp_pct = comp_pct[['Faixa Etária','% do Total (Comp)']]
-        # Merge e delta (pp)
-        abnt_table = abnt_table.merge(comp_pct, on='Faixa Etária', how='left')
-        abnt_table['Δ vs Comp.'] = abnt_table.apply(
-            lambda r: (r['% do Total'] - r['% do Total (Comp)']) if pd.notna(r.get('% do Total (Comp)')) and r['Faixa Etária'] != 'TOTAL' else None,
-            axis=1
-        )
-        # Reordenar colunas: inserir % do Total e Δ vs Comp. após '% Feminino'
-        cols = list(abnt_table.columns)
-        base_order = ['Faixa Etária', 'Masculino', 'Feminino', 'Total', '% Masculino', '% Feminino']
-        extra = ['% do Total', 'Δ vs Comp.']
-        # Remover comp helper
-        if '% do Total (Comp)' in cols:
-            cols.remove('% do Total (Comp)')
-        ordered = [c for c in base_order if c in cols] + [c for c in extra if c in cols] + [c for c in cols if c not in set(base_order+extra)]
-        abnt_table = abnt_table[ordered]
-    except Exception:
-        comp_table = None
+ 
 
 # Título da tabela conforme ABNT, com indicação de filtros de setores
 subset_flag = False
@@ -1027,7 +938,7 @@ table_note = " — setores selecionados" if subset_flag else ""
 tabela_num = 1
 _title_html = f"""
 <div style="text-align:center; font-family: Arial, 'Times New Roman', serif; font-size: 11pt; font-weight: bold;">
-    Tabela {tabela_num} — Distribuição da população por faixa etária e sexo — {title_suffix}{table_note}
+    {UI_CFG.get('labels', {}).get('table_title_prefix', 'Tabela')} {tabela_num} — Distribuição da população por faixa etária e sexo — {_sanitize_title(title_suffix)}{table_note}
 </div>
 """
 st.markdown(_title_html, unsafe_allow_html=True)
@@ -1084,16 +995,16 @@ def _render_abnt_table_html(df: pd.DataFrame) -> str:
     html = f"{css}<table class='abnt'><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
     return html
 
-st.markdown(_render_abnt_table_html(abnt_table), unsafe_allow_html=True)
+st.markdown(_render_abnt_html(abnt_table), unsafe_allow_html=True)
 
 # Fonte imediatamente abaixo da tabela (ABNT) — tamanho menor
-st.markdown("<div style='font-size:10pt; text-align:left;'>Fonte: Censo 2022 — IBGE · Página: <a href='https://www.ibge.gov.br/estatisticas/sociais/populacao/22827-censo-demografico-2022.html?=&t=downloads' target='_blank'>ibge.gov.br</a></div>", unsafe_allow_html=True)
+st.markdown(f"<div style='font-size:10pt; text-align:left;'>{UI_CFG.get('labels', {}).get('source_text_table', 'Fonte: IBGE')}</div>", unsafe_allow_html=True)
 
 csv_abnt = abnt_table.to_csv(index=False, encoding='utf-8-sig')
 st.download_button(
     label="📥 Baixar Tabela (CSV)",
     data=csv_abnt,
-    file_name=f"tabela_demografica_{title_suffix.replace(' ', '_')}.csv",
+    file_name=f"tabela_demografica_{_sanitize_title(title_suffix).replace(' ', '_')}.csv",
     mime="text/csv",
 )
 
@@ -1184,7 +1095,7 @@ try:
             perc_nulos = (setores_com_nulos / total_setores * 100.0) if total_setores > 0 else 0.0
             null_note = f"Registros de setor com valores ausentes/anônimos no recorte: {_fmt_br(setores_com_nulos,0)} de {_fmt_br(total_setores,0)} setores ({_fmt_br(perc_nulos,1)}%)."
     # Render das notas
-    st.markdown("**Notas**")
+    st.markdown(UI_CFG.get('labels', {}).get('notes_title', "**Notas**"))
     itens = []
     # Nota 1: filtros de inclusão/exclusão
     if inclu_situ or exclu_situ:

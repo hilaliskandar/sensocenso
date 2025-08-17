@@ -1,0 +1,75 @@
+# Checklist ABNT para uso automatizado (gráficos e tabelas)
+
+version: 1
+
+figure:
+  caption:
+    required: true
+    position: above
+    prefix: "Figura"
+    numbering: auto
+    bold: true
+    font_pt: 11
+    block_height_px: 48    # usado para alinhar comparativos lado a lado
+  source:
+    required: true
+    position: below
+    align: left
+    font_pt: 10
+    default_template: "Fonte: Elaboração própria com dados do {origem} ({ano})."
+  layout:
+    centered: true
+    max_width_cm: 16
+    border: true
+    border_color: "#000000"
+    border_px: 2
+
+  # Diretrizes de conteúdo
+  content:
+    self_explanatory: true
+    include_units: where_applicable
+    avoid_visual_noise: true
+
+  # Acessibilidade
+  accessibility:
+    color_contrast: recommended
+    colorblind_safe_palette: recommended
+
+  # Eixos e rótulos
+  axes:
+    y_showticklabels: true
+    x_title_suffix_percent_for_comparators: true
+
+  # Sanitização de títulos
+  sanitize:
+    normalize_dashes: true
+    drop_values: ["undefined", "nan", "none", "", null]
+
+
+ table:
+  title:
+    required: true
+    position: above
+    prefix: "Tabela"
+    numbering: auto
+    bold: true
+    font_pt: 11
+  source:
+    required: true
+    position: below
+    align: left
+    font_pt: 10
+    default_template: "Fonte: {origem}."
+  style:
+    open_sides: true      # sem bordas verticais
+    top_bottom_bold: true # linhas superior/inferior mais espessas
+    number_align: right
+    text_align: left
+    thousands_sep: "."
+    decimal_sep: ","
+  notes:
+    allowed: true
+    examples:
+      - "Situação incluída: …; excluída: …"
+      - "Tipo de setor incluído: …; excluído: …"
+      - "Cálculo de % e Δ vs comparador: …"
