@@ -1,0 +1,35 @@
+# Domain config for Demografia page
+age_buckets_order:
+  - "0 a 4 anos"
+  - "5 a 9 anos"
+  - "10 a 14 anos"
+  - "15 a 19 anos"
+  - "20 a 24 anos"
+  - "25 a 29 anos"
+  - "30 a 39 anos"
+  - "40 a 49 anos"
+  - "50 a 59 anos"
+  - "60 a 69 anos"
+  - "70 anos ou mais"
+columns_alias:
+  nm_mun: "NM_MUN"
+  cd_mun: "CD_MUN"
+  cd_setor: "CD_SETOR"
+  sexo: "sexo"
+  faixa_etaria: "faixa_etaria"
+  populacao: "populacao"
+  situacao_setor: "SITUACAO"  # alias para "Situação do Setor Censitário"
+  situacao_detalhada_setor: "SITUACAO_DET_TXT"  # alias para "Situação detalhada do Setor Censitário"
+
+# Rótulos dos tipos de setor censitário (0-9)
+sector_types:
+  0: "Não especial"
+  1: "Favela e Comunidade Urbana"
+  2: "Quartel e base militar"
+  3: "Alojamento / acampamento"
+  4: "Setor com baixo patamar domiciliar"
+  5: "Agrupamento indígena"
+  6: "Unidade prisional"
+  7: "Convento / hospital / ILPI / IACA"
+  8: "Agrovila do PA"
+  9: "Agrupamento quilombola"

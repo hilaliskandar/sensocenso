@@ -1,0 +1,7 @@
+# App-wide settings (non-functional defaults)
+paths:
+  parquet_default: "D:/repo/saida_parquet/base_integrada_final.parquet"
+  rm_au_excel_default: "D:/repo/insumos/Composicao_RM_2024.xlsx"
+ui:
+  title: "Senso&Censo — Explorador de dados censitários"
+  autorefresh_minutes: 5
