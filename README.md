@@ -9,6 +9,7 @@ Plataforma Streamlit enxuta para análise demográfica (pirâmide etária) por m
 - [Parquet esperado](#parquet-esperado)
 - [Recursos](#recursos)
 - [Erros comuns (Windows)](#erros-comuns-windows)
+- [Notas técnicas e fontes (IBGE)](#notas-técnicas-e-fontes-ibge)
 - [Algoritmo de ponta a ponta (Demografia)](#algoritmo-de-ponta-a-ponta-demografia)
 	- [Visão geral (resumo)](#visão-geral-resumo)
 	- [Ingestão e normalização](#ingestão-e-normalização)
@@ -18,6 +19,7 @@ Plataforma Streamlit enxuta para análise demográfica (pirâmide etária) por m
 - [Censo 2022 — SP Platform (English)](#censo-2022--sp-platform-english)
 	- [How to run (Windows/PowerShell)](#how-to-run-windowspowershell)
 	- [Common issues (Windows)](#common-issues-windows)
+	- [Technical notes and sources (IBGE)](#technical-notes-and-sources-ibge)
 	- [End-to-end algorithm (Demography)](#end-to-end-algorithm-demography)
 		- [Overview](#overview)
 		- [Ingestion and normalization](#ingestion-and-normalization)
@@ -81,6 +83,21 @@ D:\repo\saida_parquet\base_integrada_final.parquet
 	taskkill /f /im python.exe 2>$null
 	```
 - Dados não carregam: verifique caminhos no `settings.yaml` e se o Parquet/Excel existem.
+
+## Notas técnicas e fontes (IBGE)
+
+- Fonte de dados: Censo Demográfico 2022 (IBGE) — tabelas agregadas por setor/município, disponibilizadas localmente em Parquet.
+- Variáveis principais: `V0001` (Total de pessoas residentes) e contagens por sexo nas faixas etárias publicadas pelo IBGE.
+- Faixas etárias no app: 11 grupos canônicos (0–4, 5–9, 10–14, 15–19, 20–24, 25–29, 30–39, 40–49, 50–59, 60–69, 70+). Construção por soma direta de faixas IBGE, sem redistribuição.
+- Unidade territorial: base 2022. Alterações de limites entre censos podem afetar comparações temporais. RM/AU conforme composições oficiais (arquivo `insumos/Composicao_RM_2024.xlsx`).
+- Qualidade/consistência: pequenas diferenças de somatório podem ocorrer por arredondamento e ausências pontuais. Não há reponderação; células ausentes são exibidas como 0 (apenas para preservar a altura visual das pirâmides).
+- Percentuais do comparador: sempre relativos ao total do comparador (estrutura etária, não taxas). Use com cautela em populações muito pequenas.
+- Metodologia e definições: consultar materiais do IBGE (Censo 2022) e documentos locais abaixo.
+- Referências locais:
+	- `docs/Guia_Indicadores_Demograficos_IBGE2022.xlsx`
+	- `docs/Documentacao_Avancada_Indicadores.md`
+	- `docs/censo2022_notas.txt`
+- IBGE: https://www.ibge.gov.br/
 
 ## Algoritmo de ponta a ponta (Demografia)
 
@@ -285,6 +302,21 @@ Open page: Demografia (10_Demografia).
 	taskkill /f /im python.exe 2>$null
 	```
 - Data not loading: ensure paths in `settings.yaml` and files exist.
+
+## Technical notes and sources (IBGE)
+
+- Data source: 2022 Demographic Census (IBGE) — aggregated tables by tract/municipality, available locally as Parquet.
+- Main variables: `V0001` (Total resident population) and sex-by-age counts as published by IBGE.
+- Age groups in the app: 11 canonical groups (0–4, 5–9, 10–14, 15–19, 20–24, 25–29, 30–39, 40–49, 50–59, 60–69, 70+). Built by direct sums of IBGE groups, no redistribution.
+- Territorial unit: 2022 base. Boundary changes across censuses can affect time comparisons. RM/AU per official compositions (`insumos/Composicao_RM_2024.xlsx`).
+- Quality/consistency: minor sum differences may occur due to rounding or missing small cells. No reweighting; absent buckets are shown as 0 only to preserve chart height.
+- Comparator percentages: always relative to the comparator total (age-structure comparison, not rates). Use caution for very small populations.
+- Methodology and definitions: see IBGE (Census 2022) and local docs below.
+- Local references:
+	- `docs/Guia_Indicadores_Demograficos_IBGE2022.xlsx`
+	- `docs/Documentacao_Avancada_Indicadores.md`
+	- `docs/censo2022_notas.txt`
+- IBGE: https://www.ibge.gov.br/
 
 ## End-to-end algorithm (Demography)
 

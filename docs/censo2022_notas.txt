@@ -1,1 +1,26 @@
-Notas iniciais do Censo 2022.
+Notas técnicas — Censo Demográfico 2022 (IBGE)
+
+1) Fonte e variáveis
+- Fonte: IBGE, Censo 2022. Parquet local com tabelas agregadas por setor/município.
+- Variáveis centrais: V0001 (Total de pessoas) e contagens por sexo nas faixas etárias publicadas.
+
+2) Faixas etárias e construção
+- App usa 11 faixas canônicas: 0–4, 5–9, 10–14, 15–19, 20–24, 25–29, 30–39, 40–49, 50–59, 60–69, 70+.
+- Soma direta de faixas IBGE; sem redistribuição de idades.
+
+3) Unidades territoriais
+- Base territorial 2022. Mudanças de limites podem afetar comparações temporais.
+- RM/AU conforme composições oficiais (Composição_RM_2024.xlsx).
+
+4) Qualidade e arredondamentos
+- Pequenas diferenças de somatório podem ocorrer por arredondamento e ausências pontuais.
+- Células ausentes ficam como 0 para manter altura das pirâmides (não implica imputação).
+
+5) Percentuais do comparador
+- Sempre relativos ao total do comparador (estrutura etária, não taxa).
+- Cautela com populações pequenas.
+
+6) Referências
+- IBGE: https://www.ibge.gov.br/
+- Guia de Indicadores: docs/Guia_Indicadores_Demograficos_IBGE2022.xlsx
+- Documentação local: docs/Documentacao_Avancada_Indicadores.md
