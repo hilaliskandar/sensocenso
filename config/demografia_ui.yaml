@@ -1,0 +1,38 @@
+title: "Demografia"
+topbar:
+  title: "Explorador de Dados Censitários"
+  subtitle: "Censo 2022 — SP"
+filters:
+  situacao_label: "Situação"
+  tipo_setor_label: "Tipo de Setor"
+  rm_au_label: "RM/AU"
+  escala_label: "Escala de Análise"
+defaults:
+  situacao: ["Urbana"]
+  tipos_setor: [0, 1]
+layout:
+  pyramid_height: 520
+  show_sidebar: false
+  initial_sidebar_state: "collapsed"
+labels:
+  filters_title: "🔍 Filtros Básicos"
+  filtered_count_prefix: "**Dados filtrados:**"
+  analysis_title: "📊 Análise Demográfica"
+  select_region_rmau: "Região (RM/AU) — selecione ou digite"
+  select_region_rgint: "Região Intermediária — selecione ou digite"
+  select_region_rgi: "Região Imediata — selecione ou digite"
+  select_municipio: "Município — selecione ou digite"
+  checkbox_desag_mun: "Desagregar por setores do município"
+  select_setor_mun: "Setor do Município — selecione ou digite"
+  select_setor: "Setor — selecione ou digite"
+  municipio_pyramid: "🔺 Pirâmide — Município"
+  comparator_pyramid: "🔺 Pirâmide — Comparador (em %)"
+  generic_pyramid: "🔺 Pirâmide Etária"
+  population_summary_mun: "📈 Resumo Populacional (Município)"
+  population_summary: "📈 Resumo Populacional"
+  population_summary_both: "📈 Resumo Populacional"
+  table_title: "📋 Tabela Demográfica"
+  table_title_prefix: "Tabela"
+  list_of_figures_title: "Lista de Figuras"
+  source_text_chart: "Fonte: Elaboração própria com dados do Censo Demográfico 2022 (IBGE)."
+  source_text_table: "Fonte: Censo 2022 — IBGE · Página: https://www.ibge.gov.br/estatisticas/sociais/populacao/22827-censo-demografico-2022.html?=&t=downloads"

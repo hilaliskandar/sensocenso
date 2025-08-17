@@ -1,6 +1,7 @@
 import re
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 
 AGE_ORDER_10 = [
     "0 a 4 anos","5 a 9 anos","10 a 14 anos","15 a 19 anos",
@@ -62,3 +63,31 @@ def make_age_pyramid(df: pd.DataFrame, title: str = "Pirâmide etária") -> go.F
     fig.update_yaxes(categoryorder='array', categoryarray=order)
     fig.update_xaxes(tickformat=",", title=None)
     return fig
+
+# Alias em PT-BR (API pública preferencial)
+def construir_piramide_etaria(df: pd.DataFrame, titulo: str = "Pirâmide etária") -> go.Figure:
+    return make_age_pyramid(df, title=titulo)
+
+# --- Categóricos ---
+def make_pie_chart(df, categoria_col: str = "categoria", valor_col: str = "valor", titulo: str | None = None):
+    fig = px.pie(df, names=categoria_col, values=valor_col, hole=0.0)
+    if titulo:
+        fig.update_layout(title_text=titulo, title_x=0.5)
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    return fig
+
+def make_bar_chart(df, categoria_col: str = "categoria", valor_col: str = "valor", titulo: str | None = None):
+    order = df.sort_values(valor_col, ascending=True)[categoria_col].tolist()
+    fig = px.bar(df, x=valor_col, y=categoria_col, orientation='h', category_orders={categoria_col: order})
+    if titulo:
+        fig.update_layout(title_text=titulo, title_x=0.5)
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10))
+    return fig
+
+# Aliases PT-BR
+def construir_grafico_pizza(df, categoria_col: str = "categoria", valor_col: str = "valor", titulo: str | None = None):
+    return make_pie_chart(df, categoria_col, valor_col, titulo)
+
+def construir_grafico_barra(df, categoria_col: str = "categoria", valor_col: str = "valor", titulo: str | None = None):
+    return make_bar_chart(df, categoria_col, valor_col, titulo)

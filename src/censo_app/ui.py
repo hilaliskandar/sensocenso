@@ -65,3 +65,7 @@ def render_topbar(title: str = "Senso&Censo — Explorador de dados censitários
         st.markdown(html, unsafe_allow_html=True)
     else:
         st.markdown(f"<div class='senso-topbar'><b>{title}</b></div>", unsafe_allow_html=True)
+
+# Alias em PT-BR
+def renderizar_barra_superior(titulo: str = "Senso&Censo — Explorador de dados censitários", subtitulo: str = "Censo 2022 — SP") -> None:
+    render_topbar(title=titulo, subtitle=subtitulo)
