@@ -490,6 +490,53 @@ comp_available = False  # controla se há comparador válido para o layout
 df_comp_plot = None
 comp_title = None
 
+
+def _determinar_comparador(df_scope: pd.DataFrame, df_long: pd.DataFrame) -> tuple:
+    """Determina o DataFrame e título do comparador para um dado escopo.
+
+    Ordem de prioridade:
+    1. Colunas unificadas TIPO_RM_AU + NOME_RM_AU
+    2. RM_NOME (legado)
+    3. AU_NOME (legado)
+    4. NM_RGI — Região Imediata
+    5. Estado de São Paulo (fallback)
+
+    Retorna (df_comp_plot, comp_title, comp_available).
+    """
+    try:
+        df_comp_base = pd.DataFrame(columns=df_long.columns)
+        title = None
+
+        if {"TIPO_RM_AU", "NOME_RM_AU"}.issubset(df_scope.columns) and df_scope[["TIPO_RM_AU", "NOME_RM_AU"]].dropna().shape[0] > 0:
+            pair = df_scope[["TIPO_RM_AU", "NOME_RM_AU"]].dropna().drop_duplicates().iloc[0]
+            t, n = str(pair["TIPO_RM_AU"]).upper(), str(pair["NOME_RM_AU"])
+            mask = (df_long["TIPO_RM_AU"].astype(str).str.upper() == t) & (df_long["NOME_RM_AU"] == n)
+            df_comp_base = df_long[mask]
+            title = f"{t} — {n}"
+        elif "RM_NOME" in df_scope.columns and df_scope["RM_NOME"].notna().any():
+            n = str(df_scope["RM_NOME"].dropna().unique()[0])
+            df_comp_base = df_long[df_long["RM_NOME"] == n] if "RM_NOME" in df_long.columns else pd.DataFrame(columns=df_long.columns)
+            title = f"RM — {n}"
+        elif "AU_NOME" in df_scope.columns and df_scope["AU_NOME"].notna().any():
+            n = str(df_scope["AU_NOME"].dropna().unique()[0])
+            df_comp_base = df_long[df_long["AU_NOME"] == n] if "AU_NOME" in df_long.columns else pd.DataFrame(columns=df_long.columns)
+            title = f"AU — {n}"
+        elif "NM_RGI" in df_scope.columns and df_scope["NM_RGI"].notna().any():
+            rgi = str(df_scope["NM_RGI"].dropna().unique()[0])
+            df_comp_base = df_long[df_long["NM_RGI"] == rgi] if "NM_RGI" in df_long.columns else pd.DataFrame(columns=df_long.columns)
+            title = f"Região Imediata — {rgi}"
+
+        if not title:
+            df_comp_base = df_long
+            title = "Estado de São Paulo"
+
+        if not df_comp_base.empty:
+            return _aggregate_local(df_comp_base), _sanitize_title(title), True
+        return None, _sanitize_title(title), False
+    except Exception:
+        return None, None, False
+
+
 # Seleção por escala
 if nivel == "Estado":
     df_analysis = df_long
@@ -554,86 +601,18 @@ elif nivel in ("Município","Setores") and has_mun:
         if not desag:
             df_analysis = df_scope
             title_suffix = _fmt(sel_mun)
-            # Preparar comparador: RM/AU (preferência) ou Região Imediata
-            df_comp_plot = None
-            comp_title = None
+            # Preparar comparador: RM/AU (preferência) → Região Imediata → Estado
             if hasattr(st, "status"):
                 with st.status("Determinando comparador…", expanded=False) as st_status:
                     prog = st.progress(0, text="Identificando região…")
-                    try:
-                        # Preferência: colunas unificadas RM/AU
-                        if {"TIPO_RM_AU","NOME_RM_AU"}.issubset(df_scope.columns) and df_scope[["TIPO_RM_AU","NOME_RM_AU"]].dropna().shape[0] > 0:
-                            pair = (df_scope[["TIPO_RM_AU","NOME_RM_AU"]].dropna().drop_duplicates().iloc[0])
-                            t, n = str(pair["TIPO_RM_AU"]).upper(), str(pair["NOME_RM_AU"])
-                            mask = (df_long["TIPO_RM_AU"].astype(str).str.upper()==t) & (df_long["NOME_RM_AU"]==n)
-                            df_comp_base = df_long[mask]
-                            comp_title = f"{t} — {n}"
-                        else:
-                            # Legado: RM_NOME / AU_NOME no município
-                            if "RM_NOME" in df_scope.columns and df_scope["RM_NOME"].notna().any():
-                                n = str(df_scope["RM_NOME"].dropna().unique()[0])
-                                df_comp_base = df_long[df_long["RM_NOME"]==n] if "RM_NOME" in df_long.columns else pd.DataFrame(columns=df_long.columns)
-                                comp_title = f"RM — {n}"
-                            elif "AU_NOME" in df_scope.columns and df_scope["AU_NOME"].notna().any():
-                                n = str(df_scope["AU_NOME"].dropna().unique()[0])
-                                df_comp_base = df_long[df_long["AU_NOME"]==n] if "AU_NOME" in df_long.columns else pd.DataFrame(columns=df_long.columns)
-                                comp_title = f"AU — {n}"
-                            else:
-                                # Região Imediata
-                                if "NM_RGI" in df_scope.columns and df_scope["NM_RGI"].notna().any():
-                                    rgi = str(df_scope["NM_RGI"].dropna().unique()[0])
-                                    df_comp_base = df_long[df_long["NM_RGI"]==rgi] if "NM_RGI" in df_long.columns else pd.DataFrame(columns=df_long.columns)
-                                    comp_title = f"Região Imediata — {rgi}"
-                                else:
-                                    df_comp_base = pd.DataFrame(columns=df_long.columns)
-                        prog.progress(65, text="Agregando comparador…")
-                        if not comp_title:
-                            # Último recurso: Estado
-                            df_comp_base = df_long
-                            comp_title = "Estado de São Paulo"
-                        if not df_comp_base.empty:
-                            df_comp_plot = _aggregate_local(df_comp_base)
-                            comp_available = True
-                        comp_title = _sanitize_title(comp_title)
-                        prog.progress(100)
+                    df_comp_plot, comp_title, comp_available = _determinar_comparador(df_scope, df_long)
+                    prog.progress(100)
+                    if comp_available:
                         st_status.update(label=f"Comparador: {comp_title}", state="complete")
-                    except Exception:
-                        st_status.update(label="Comparador não identificado", state="error")
-                        df_comp_plot = None
-            else:
-                try:
-                    if {"TIPO_RM_AU","NOME_RM_AU"}.issubset(df_scope.columns) and df_scope[["TIPO_RM_AU","NOME_RM_AU"]].dropna().shape[0] > 0:
-                        pair = (df_scope[["TIPO_RM_AU","NOME_RM_AU"]].dropna().drop_duplicates().iloc[0])
-                        t, n = str(pair["TIPO_RM_AU"]).upper(), str(pair["NOME_RM_AU"])
-                        mask = (df_long["TIPO_RM_AU"].astype(str).str.upper()==t) & (df_long["NOME_RM_AU"]==n)
-                        df_comp_base = df_long[mask]
-                        comp_title = f"{t} — {n}"
                     else:
-                        if "RM_NOME" in df_scope.columns and df_scope["RM_NOME"].notna().any():
-                            n = str(df_scope["RM_NOME"].dropna().unique()[0])
-                            df_comp_base = df_long[df_long["RM_NOME"]==n] if "RM_NOME" in df_long.columns else pd.DataFrame(columns=df_long.columns)
-                            comp_title = f"RM — {n}"
-                        elif "AU_NOME" in df_scope.columns and df_scope["AU_NOME"].notna().any():
-                            n = str(df_scope["AU_NOME"].dropna().unique()[0])
-                            df_comp_base = df_long[df_long["AU_NOME"]==n] if "AU_NOME" in df_long.columns else pd.DataFrame(columns=df_long.columns)
-                            comp_title = f"AU — {n}"
-                        else:
-                            if "NM_RGI" in df_scope.columns and df_scope["NM_RGI"].notna().any():
-                                rgi = str(df_scope["NM_RGI"].dropna().unique()[0])
-                                df_comp_base = df_long[df_long["NM_RGI"]==rgi] if "NM_RGI" in df_long.columns else pd.DataFrame(columns=df_long.columns)
-                                comp_title = f"Região Imediata — {rgi}"
-                            else:
-                                df_comp_base = pd.DataFrame(columns=df_long.columns)
-                    if not comp_title:
-                        df_comp_base = df_long
-                        comp_title = "Estado de São Paulo"
-                    if not df_comp_base.empty:
-                        df_comp_plot = _aggregate_local(df_comp_base)
-                        comp_available = True
-                    comp_title = _sanitize_title(comp_title)
-                except Exception:
-                    df_comp_plot = None
-                    comp_available = False
+                        st_status.update(label="Comparador não identificado", state="error")
+            else:
+                df_comp_plot, comp_title, comp_available = _determinar_comparador(df_scope, df_long)
         else:
             if not has_setor:
                 st.error("❌ Colunas de setor não disponíveis")
@@ -942,58 +921,6 @@ _title_html = f"""
 </div>
 """
 st.markdown(_title_html, unsafe_allow_html=True)
-
-# Renderização ABNT: aberta nas laterais (sem bordas verticais), linhas superior e inferior
-def _render_abnt_table_html(df: pd.DataFrame) -> str:
-    # Formatação numérica
-    fmt = {
-        "Masculino": lambda x: _fmt_br(x, 0),
-        "Feminino": lambda x: _fmt_br(x, 0),
-        "Total": lambda x: _fmt_br(x, 0),
-        "% Masculino": lambda x: (_fmt_br(x, 1) + "%") if pd.notna(x) else "",
-        "% Feminino": lambda x: (_fmt_br(x, 1) + "%") if pd.notna(x) else "",
-        "% do Total": lambda x: (_fmt_br(x, 1) + "%") if pd.notna(x) else "",
-        "Δ vs Comp.": None,
-    }
-    df_fmt = df.copy()
-    # Formatação especial do delta com setas/cores
-    def _fmt_delta(val):
-        if pd.isna(val):
-            return ""
-        try:
-            v = float(val)
-        except Exception:
-            return ""
-        if abs(v) < 1e-9:
-            return "<span style='color:#666'>—</span>"
-        arrow = "▲" if v > 0 else "▼"
-        color = "#0a8f2a" if v > 0 else "#c62828"
-        sign = "+" if v > 0 else ""
-        return f"<span style='color:{color}; font-weight:600'>{arrow} {sign}{_fmt_br(abs(v), 1)} pp</span>"
-    for col, f in fmt.items():
-        if col in df_fmt.columns:
-            if col == "Δ vs Comp.":
-                df_fmt[col] = df_fmt[col].apply(lambda x: _fmt_delta(x))
-            else:
-                df_fmt[col] = df_fmt[col].apply(lambda x: f(x) if pd.notna(x) else "")
-
-    # Construir HTML manual para ter controle total sobre as bordas
-    thead = "<tr>" + "".join(f"<th>{c}</th>" for c in df_fmt.columns) + "</tr>"
-    rows = []
-    for _, r in df_fmt.iterrows():
-        tds = "".join(f"<td>{r[c]}</td>" for c in df_fmt.columns)
-        rows.append(f"<tr>{tds}</tr>")
-    tbody = "".join(rows)
-    css = """
-    <style>
-    table.abnt {border-collapse: collapse; width: 100%; border-top: 2px solid #000; border-bottom: 2px solid #000; font-family: Arial, 'Times New Roman', serif; font-size: 12px;}
-    table.abnt th, table.abnt td {padding: 6px 10px; text-align: right; border-left: none; border-right: none;}
-    table.abnt th:first-child, table.abnt td:first-child {text-align: left;}
-    table.abnt thead th {text-align: left;}
-    </style>
-    """
-    html = f"{css}<table class='abnt'><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
-    return html
 
 st.markdown(_render_abnt_html(abnt_table), unsafe_allow_html=True)
 
