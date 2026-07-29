@@ -1,7 +1,9 @@
 # App-wide settings (non-functional defaults)
+# Caminhos abaixo são exemplos; ajuste conforme sua instalação local.
+# Use caminhos relativos ao diretório do projeto ou absolutos (ex: D:/repo/...).
 paths:
-  parquet_default: "D:/repo/saida_parquet/base_integrada_final.parquet"
-  rm_au_excel_default: "D:/repo/insumos/Composicao_RM_2024.xlsx"
+  parquet_default: "data/censo2022_sp.parquet"
+  rm_au_excel_default: "insumos/Composicao_RM_2024.xlsx"
 ui:
   title: "Senso&Censo — Explorador de dados censitários"
   autorefresh_minutes: 5

@@ -46,7 +46,8 @@ with st.sidebar:
     try:
         st.page_link("app.py", label="Início", icon="🏠")
         st.page_link("pages/10_Demografia.py", label="Demografia", icon="🏛️")
-        # 'Sobre' é opcional; será exibido apenas se existir
+        st.page_link("pages/20_Domicilios.py", label="Domicílios", icon="🏠")
+        st.page_link("pages/30_Indicadores.py", label="Indicadores", icon="📊")
         st.page_link("pages/99_Sobre.py", label="Sobre", icon="ℹ️")
     except Exception:
         pass
@@ -58,14 +59,21 @@ st.write(
 )
 
 st.markdown(
-    "- Acesse a seção Demografia para pirâmides etárias e tabelas formatadas.\n"
-    "- Use os filtros dentro da página Demografia para Situação (Urbana/Rural), Tipo de Setor e recortes territoriais."
+    "- Acesse a seção **Demografia** para pirâmides etárias e tabelas formatadas.\n"
+    "- Acesse a seção **Indicadores** para razões de dependência, índices de envelhecimento e flags de qualidade.\n"
+    "- Acesse a seção **Domicílios** para indicadores categóricos por tipo, espécie, água, esgoto e lixo.\n"
+    "- Use os filtros dentro de cada página para Situação (Urbana/Rural), Tipo de Setor e recortes territoriais."
 )
 
-col1, col2 = st.columns([1,1])
+col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     st.page_link("pages/10_Demografia.py", label="Ir para Demografia", icon="➡️")
 with col2:
+    try:
+        st.page_link("pages/30_Indicadores.py", label="Ir para Indicadores", icon="📊")
+    except Exception:
+        pass
+with col3:
     try:
         st.page_link("pages/99_Sobre.py", label="Sobre o projeto", icon="📄")
     except Exception:
