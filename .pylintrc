@@ -1,0 +1,36 @@
+[MAIN]
+# Minimum score threshold; below this value the exit code is modified.
+fail-under=9.0
+
+[MESSAGES CONTROL]
+# Disable checks that are either false positives in this CI environment
+# or stylistic choices made by the project.
+disable=
+    # E0401: dependencies (streamlit, pandas, plotly, …) are not installed
+    # in the lint-only CI step → pure false positives.
+    import-error,
+
+    # C/W/R: stylistic or project-specific choices
+    # Streamlit page scripts use numbered filenames (10_Demo.py) – not snake_case.
+    invalid-name,
+    # Streamlit scripts often import after st.set_page_config() / config blocks.
+    wrong-import-position,
+    wrong-import-order,
+    # Long strings in HTML/markdown / long data-pipelines are common in Streamlit.
+    line-too-long,
+    # Module and function docstrings are not required for Streamlit pages.
+    missing-module-docstring,
+    missing-function-docstring,
+    # Broad except is used intentionally for Streamlit UI resilience.
+    broad-exception-caught,
+    # Single-line if/assign is a deliberate style choice in data scripts.
+    multiple-statements,
+    # __init__.py re-exports using "import X as X" for public API clarity.
+    useless-import-alias,
+    # Module-level code in Streamlit pages naturally shadows outer names.
+    redefined-outer-name,
+    # dict() vs {} literal – minor style, no functional difference.
+    use-dict-literal,
+
+[FORMAT]
+max-line-length=130
