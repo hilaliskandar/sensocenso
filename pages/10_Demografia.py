@@ -120,7 +120,7 @@ def create_abnt_demographic_table(df_plot, title_suffix=""):
 UI_CFG = get_page_config('demografia_ui') or {}
 st.set_page_config(layout="wide", initial_sidebar_state=UI_CFG.get('layout', {}).get('initial_sidebar_state', 'collapsed'))
 tb = UI_CFG.get('topbar', {})
-_renderizar_barra_superior(title=tb.get('title', "Explorador de Dados Censitários"), subtitle=tb.get('subtitle', "Censo 2022 — SP"))
+_renderizar_barra_superior(titulo=tb.get('title', "Explorador de Dados Censitários"), subtitulo=tb.get('subtitle', "Censo 2022 — SP"))
 st.title(UI_CFG.get('title', "Demografia"))
 
 # CSS: destacar selects como "botões" e permitir quebras em labels/títulos
@@ -681,7 +681,7 @@ if comp_available and 'df_comp_plot' in locals() and isinstance(df_comp_plot, pd
         try:
             fig = _construir_piramide(
                 df_plot.rename(columns={"faixa_etaria": "idade_grupo", "populacao": "valor"}),
-                title=_wrap_title(f"{_left_title}")
+                titulo=_wrap_title(f"{_left_title}")
             )
             fig.update_layout(
                 showlegend=False,
@@ -713,7 +713,7 @@ if comp_available and 'df_comp_plot' in locals() and isinstance(df_comp_plot, pd
             _dfc["populacao"] = (_dfc["populacao"].astype(float) / _totalc * 100.0) if _totalc > 0 else 0.0
             figc = _construir_piramide(
                 _dfc.rename(columns={"faixa_etaria": "idade_grupo", "populacao": "valor"}),
-                title=_wrap_title(f"{_mid_title}")
+                titulo=_wrap_title(f"{_mid_title}")
             )
             figc.update_yaxes(showticklabels=False, title_text=None)
             figc.update_xaxes(ticksuffix="%", title_text="% da População")
@@ -773,7 +773,7 @@ else:
     try:
         fig = _construir_piramide(
             df_plot.rename(columns={"faixa_etaria": "idade_grupo", "populacao": "valor"}),
-            title=_wrap_title(f"Demografia — {_single_title}")
+            titulo=_wrap_title(f"Demografia — {_single_title}")
         )
         fig.update_layout(
             showlegend=False,
