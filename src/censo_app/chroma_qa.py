@@ -3,8 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Dict, Any
 from pathlib import Path
-import chromadb
-from sentence_transformers import SentenceTransformer
+
+try:
+    import chromadb  # type: ignore
+except ImportError:
+    chromadb = None  # type: ignore
+
+try:
+    from sentence_transformers import SentenceTransformer  # type: ignore
+except ImportError:
+    SentenceTransformer = None  # type: ignore
+
 
 @dataclass
 class ChromaQA:
@@ -14,6 +23,16 @@ class ChromaQA:
     normalize: bool = True
 
     def __post_init__(self):
+        if chromadb is None:
+            raise ImportError(
+                "O pacote 'chromadb' não está instalado. "
+                "Execute: pip install chromadb"
+            )
+        if SentenceTransformer is None:
+            raise ImportError(
+                "O pacote 'sentence-transformers' não está instalado. "
+                "Execute: pip install sentence-transformers"
+            )
         safe_dir = Path(self.persist_directory).expanduser().as_posix()
         self.client = chromadb.PersistentClient(path=safe_dir)
         self.coll = self.client.get_collection(name=self.collection)
