@@ -318,8 +318,7 @@ def _merge_rm_au(df: pd.DataFrame, excel_path: str = "insumos/Composicao_RM_2024
             out["REGIAO_RM_AU"] = out["REGIAO_RM_AU"].where(out["REGIAO_RM_AU"].notna(), out["AU_NOME"])
     # Tipo da região (RM tem prioridade sobre AU)
     if "TIPO_RM_AU" not in out.columns:
-        import pandas as _pd
-        tipo = _pd.Series(_pd.NA, index=out.index, dtype="object")
+        tipo = pd.Series(pd.NA, index=out.index, dtype="object")
         if "RM_NOME" in out.columns:
             tipo = tipo.where(~out["RM_NOME"].notna(), "RM")
         if "AU_NOME" in out.columns:

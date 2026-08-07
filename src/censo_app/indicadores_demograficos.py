@@ -120,11 +120,13 @@ def gerar_flags_qualidade(grupos, whipple_index: float | None = None):
 
     return flags
 
-def calcular_indicadores_df(df, idade_col='idade', sexo_col='sexo', pop_col='pop', group_cols=['CodIBGE','Municipio']):
+def calcular_indicadores_df(df, idade_col='idade', sexo_col='sexo', pop_col='pop', group_cols=None):
     """
     Calcula indicadores demográficos para cada município (ou grupo definido).
     Retorna DataFrame com indicadores e flags de qualidade.
     """
+    if group_cols is None:
+        group_cols = ['CodIBGE', 'Municipio']
     results = []
     for keys, subdf in df.groupby(group_cols):
         grupos = calcular_populacoes_agrupadas(subdf, idade_col, sexo_col, pop_col)
