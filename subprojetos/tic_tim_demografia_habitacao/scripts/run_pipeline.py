@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """Orquestrador do pipeline TIC–TIM de demografia e habitação.
 
-Nesta primeira versão o script define o contrato das etapas. Cada módulo será
-implementado e validado contra os produtos auditados antes de a etapa seguinte
-ser considerada estável.
+As etapas são implementadas incrementalmente. Uma etapa só deixa o estado de
+placeholder depois de possuir fonte, proveniência, QA e teste de regressão
+compatíveis com o caderno metodológico público.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from tic_tim_demografia import etapa00, etapa01  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -19,6 +28,7 @@ class Etapa:
     codigo: str
     nome: str
     funcao: Callable[[Path], None]
+    implementada: bool = True
 
 
 def ainda_nao_implementada(nome: str) -> Callable[[Path], None]:
@@ -32,34 +42,42 @@ def ainda_nao_implementada(nome: str) -> Callable[[Path], None]:
 
 
 ETAPAS = [
-    Etapa("01", "aquisição das fontes", ainda_nao_implementada("aquisição das fontes")),
-    Etapa("02", "harmonização longitudinal", ainda_nao_implementada("harmonização longitudinal")),
-    Etapa("03", "indicadores domiciliares", ainda_nao_implementada("indicadores domiciliares")),
-    Etapa("04", "CWR", ainda_nao_implementada("CWR")),
-    Etapa("05", "ISAU e privação", ainda_nao_implementada("ISAU e privação")),
-    Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano")),
-    Etapa("07", "famílias analíticas", ainda_nao_implementada("famílias analíticas")),
-    Etapa("08", "sensibilidade P75/P80", ainda_nao_implementada("sensibilidade P75/P80")),
-    Etapa("09", "validação espacial", ainda_nao_implementada("validação espacial")),
-    Etapa("10", "sínteses municipais", ainda_nao_implementada("sínteses municipais")),
-    Etapa("11", "tabelas e mapas", ainda_nao_implementada("tabelas e mapas")),
-    Etapa("12", "QA final", ainda_nao_implementada("QA final")),
+    Etapa("00", "configuração, universo e QA inicial", etapa00.executar),
+    Etapa("01", "aquisição e congelamento inicial das fontes", etapa01.executar),
+    Etapa("02", "harmonização longitudinal", ainda_nao_implementada("harmonização longitudinal"), False),
+    Etapa("03", "indicadores domiciliares", ainda_nao_implementada("indicadores domiciliares"), False),
+    Etapa("04", "CWR", ainda_nao_implementada("CWR"), False),
+    Etapa("05", "ISAU e privação", ainda_nao_implementada("ISAU e privação"), False),
+    Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano"), False),
+    Etapa("07", "famílias analíticas", ainda_nao_implementada("famílias analíticas"), False),
+    Etapa("08", "sensibilidade P75/P80", ainda_nao_implementada("sensibilidade P75/P80"), False),
+    Etapa("09", "validação espacial", ainda_nao_implementada("validação espacial"), False),
+    Etapa("10", "sínteses municipais", ainda_nao_implementada("sínteses municipais"), False),
+    Etapa("11", "tabelas e mapas", ainda_nao_implementada("tabelas e mapas"), False),
+    Etapa("12", "QA final", ainda_nao_implementada("QA final"), False),
 ]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raiz", type=Path, default=Path.cwd())
-    parser.add_argument("--etapa", choices=[e.codigo for e in ETAPAS] + ["todas"], default="todas")
+    parser.add_argument("--raiz", type=Path, default=ROOT)
+    parser.add_argument("--etapa", choices=[e.codigo for e in ETAPAS] + ["implementadas", "todas"], default="implementadas")
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
 
     if args.listar:
         for etapa in ETAPAS:
-            print(f"{etapa.codigo}: {etapa.nome}")
+            status = "OK" if etapa.implementada else "PENDENTE"
+            print(f"{etapa.codigo}: {etapa.nome} [{status}]")
         return
 
-    selecionadas = ETAPAS if args.etapa == "todas" else [e for e in ETAPAS if e.codigo == args.etapa]
+    if args.etapa == "implementadas":
+        selecionadas = [e for e in ETAPAS if e.implementada]
+    elif args.etapa == "todas":
+        selecionadas = ETAPAS
+    else:
+        selecionadas = [e for e in ETAPAS if e.codigo == args.etapa]
+
     for etapa in selecionadas:
         print(f"[{etapa.codigo}] {etapa.nome}")
         etapa.funcao(args.raiz)
