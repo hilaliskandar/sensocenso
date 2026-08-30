@@ -1,0 +1,41 @@
+fontes:
+  sidra_2000_idade:
+    instituicao: "IBGE/SIDRA"
+    tabela: 1518
+    periodo: 2000
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/1518"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "estrutura etária municipal e harmonização 0–14, 15–59 e 60+"
+    regra: "situação do domicílio=Total; sexo=Total; não interpolar faixas"
+
+  sidra_2010_idade:
+    instituicao: "IBGE/SIDRA"
+    tabela: 3107
+    periodo: 2010
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/3107"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "estrutura etária municipal de 2010, complementada pela Sinopse quando necessário"
+
+  censo2022_agregados_setor:
+    instituicao: "IBGE"
+    periodo: 2022
+    discovery_url: "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/"
+    uso: "população, domicílios e variáveis setoriais do universo"
+    regra: "registrar edição, dicionário e hash do arquivo bruto usado"
+
+  censo2022_cnefe_municipios:
+    instituicao: "IBGE"
+    periodo: 2022
+    discovery_url: "https://ftp.ibge.gov.br/Cadastro_Nacional_de_Enderecos_para_Fins_Estatisticos/Censo_Demografico_2022/Arquivos_CNEFE/GeoJSON/Municipio_20240910/"
+    uso: "base auxiliar espacial; baixar apenas quando exigido por etapa específica"
+
+politica_aquisicao:
+  preservar_bruto: true
+  calcular_sha256: true
+  registrar_url_final: true
+  registrar_data_hora_utc: true
+  substituir_silenciosamente: false
+  preferir_download_em_lote: true
+  recortar_por_codigos_municipais_apos_download: true
