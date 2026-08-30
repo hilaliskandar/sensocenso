@@ -1,37 +1,12 @@
-# Universo territorial do diagnóstico TIC–TIM — 30 municípios.
-# Os códigos IBGE serão validados contra a fonte oficial na etapa de aquisição.
-municipios:
-  - Americana
-  - Atibaia
-  - Bragança Paulista
-  - Cabreúva
-  - Caieiras
-  - Cajamar
-  - Campo Limpo Paulista
-  - Campinas
-  - Francisco Morato
-  - Franco da Rocha
-  - Hortolândia
-  - Indaiatuba
-  - Itatiba
-  - Itupeva
-  - Jaguariúna
-  - Jarinu
-  - Jundiaí
-  - Louveira
-  - Monte Mor
-  - Morungaba
-  - Nova Odessa
-  - Paulínia
-  - Pedreira
-  - Santa Bárbara d'Oeste
-  - Santo Antônio de Posse
-  - Sumaré
-  - Valinhos
-  - Várzea Paulista
-  - Vinhedo
-  - Artur Nogueira
+# Universo territorial do diagnóstico TIC–TIM.
+#
+# Este arquivo será preenchido somente a partir da matriz municipal auditada do
+# projeto. Não se aceita reconstrução por memória, inferência geográfica ou
+# listas digitadas sem confronto com o produto canônico.
+municipios: []
 
 validacao:
   quantidade_esperada: 30
-  regra_codigo_ibge: "resolver e validar automaticamente na fonte oficial; não manter código digitado sem teste"
+  fonte_de_verdade: "TIC_TIM_MATRIZ_MUNICIPAL_FINAL_PERFIS_CENSITARIOS_30M_v1"
+  regra_codigo_ibge: "resolver e validar contra a fonte oficial do IBGE"
+  bloquear_execucao_se_lista_incompleta: true
