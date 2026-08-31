@@ -33,13 +33,6 @@ def localizar_csv_basico_no_zip(path: Path) -> str:
 
 
 def _detectar_encoding(bruto: bytes) -> str:
-    """Detecta entre as codificações observáveis nos CSV públicos do IBGE.
-
-    Parte dos agregados 2022 é publicada em UTF-8 e parte em codificação
-    Windows/Latin-1. A leitura não deve substituir bytes inválidos de forma
-    silenciosa: tenta codificações explícitas em ordem conservadora e falha se
-    nenhuma decodificar integralmente o arquivo.
-    """
     for encoding in ("utf-8-sig", "cp1252", "latin1"):
         try:
             bruto.decode(encoding, errors="strict")
@@ -69,7 +62,6 @@ def _ler_membro_csv(path: Path, membro: str) -> pd.DataFrame:
 
 
 def ler_setores_urbanos_basico_zip(path: Path, *, codigos_municipais: Iterable[str]) -> pd.DataFrame:
-    """Lê do arquivo Básico a classificação oficial urbana/rural dos setores."""
     codigos = {str(c) for c in codigos_municipais}
     df = _ler_membro_csv(path, localizar_csv_basico_no_zip(path))
     mapa = {str(c).strip().casefold(): str(c) for c in df.columns}
@@ -101,7 +93,6 @@ def ler_demografia_setorial_zip(
     codigos_municipais: Iterable[str],
     setores_permitidos: Iterable[str] | None = None,
 ) -> pd.DataFrame:
-    """Lê somente os setores pertencentes ao universo configurado e ao recorte informado."""
     codigos = {str(c) for c in codigos_municipais}
     df = _ler_membro_csv(path, localizar_csv_demografia_no_zip(path))
 
@@ -125,8 +116,46 @@ def ler_demografia_setorial_zip(
     return recorte.rename(columns={coluna_setor: "codigo_setor"})
 
 
+def diagnosticar_simbolos_demografia(setores: pd.DataFrame) -> dict:
+    """Documenta células não numéricas sem tentar reconstruir dados protegidos.
+
+    Nos Agregados por Setores Censitários 2022, ``x``/``X`` sinaliza omissão por
+    tratamento de sigilo. O diagnóstico identifica incidência, variável e
+    município, mas deliberadamente não infere valores suprimidos por diferença.
+    """
+    por_variavel: dict[str, dict] = {}
+    setores_afetados: set[str] = set()
+    municipios_afetados: set[str] = set()
+    for coluna in COLUNAS_DEMOGRAFIA:
+        bruto = setores[coluna].astype("string").str.strip()
+        numeric = pd.to_numeric(bruto, errors="coerce")
+        mask = numeric.isna() & bruto.notna()
+        if not mask.any():
+            continue
+        simbolos = bruto.loc[mask].value_counts(dropna=False).to_dict()
+        subset = setores.loc[mask, ["codigo_setor", "codigo_ibge"]].copy()
+        setores_afetados.update(subset["codigo_setor"].astype(str))
+        municipios_afetados.update(subset["codigo_ibge"].astype(str))
+        por_variavel[coluna] = {
+            "celulas": int(mask.sum()),
+            "simbolos": {str(k): int(v) for k, v in simbolos.items()},
+            "municipios": sorted(subset["codigo_ibge"].astype(str).unique().tolist()),
+            "amostra_setores": sorted(subset["codigo_setor"].astype(str).unique().tolist())[:25],
+        }
+    return {
+        "setores_analisados": int(len(setores)),
+        "setores_com_algum_simbolo": int(len(setores_afetados)),
+        "municipios_com_algum_simbolo": sorted(municipios_afetados),
+        "n_municipios_com_algum_simbolo": int(len(municipios_afetados)),
+        "por_variavel": por_variavel,
+        "regra": (
+            "x/X é tratado como dado omitido por sigilo; não converter em zero e não inferir "
+            "valor individual por diferença"
+        ),
+    }
+
+
 def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
-    """Agrega setores para as bandas canônicas da série longitudinal."""
     work = setores.copy()
     for coluna in COLUNAS_DEMOGRAFIA:
         bruto = work[coluna].astype("string").str.strip()
@@ -134,7 +163,7 @@ def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
         invalidos = sorted(bruto[num.isna() & bruto.notna()].dropna().unique().tolist())
         if invalidos:
             raise ValueError(
-                f"Valores não numéricos em {coluna}; ausência/supressão não será convertida em zero: {invalidos}"
+                f"Valores não numéricos em {coluna}; dados protegidos/ausentes não serão convertidos em zero: {invalidos}"
             )
         work[coluna] = num
 
