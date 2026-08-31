@@ -42,6 +42,8 @@ jobs:
         run: python scripts/run_pipeline.py --etapa 03a
       - name: Executa etapa 03b
         run: python scripts/run_pipeline.py --etapa 03b
+      - name: Executa etapa 03c
+        run: python scripts/run_pipeline.py --etapa 03c
       - name: Lista artefatos
         if: always()
         run: |
