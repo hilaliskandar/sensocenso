@@ -32,8 +32,25 @@ def localizar_csv_basico_no_zip(path: Path) -> str:
     return _localizar_csv_no_zip(path, "basico")
 
 
-def _detectar_separador(amostra: bytes) -> str:
-    texto = amostra.decode("utf-8-sig", errors="replace")
+def _detectar_encoding(bruto: bytes) -> str:
+    """Detecta entre as codificações observáveis nos CSV públicos do IBGE.
+
+    Parte dos agregados 2022 é publicada em UTF-8 e parte em codificação
+    Windows/Latin-1. A leitura não deve substituir bytes inválidos de forma
+    silenciosa: tenta codificações explícitas em ordem conservadora e falha se
+    nenhuma decodificar integralmente o arquivo.
+    """
+    for encoding in ("utf-8-sig", "cp1252", "latin1"):
+        try:
+            bruto.decode(encoding, errors="strict")
+            return encoding
+        except UnicodeDecodeError:
+            continue
+    raise UnicodeDecodeError("utf-8", bruto, 0, 1, "codificação CSV não reconhecida")
+
+
+def _detectar_separador(amostra: bytes, *, encoding: str) -> str:
+    texto = amostra.decode(encoding, errors="strict")
     primeira = texto.splitlines()[0] if texto.splitlines() else ""
     contagens = {";": primeira.count(";"), ",": primeira.count(","), "\t": primeira.count("\t")}
     separador, n = max(contagens.items(), key=lambda x: x[1])
@@ -46,17 +63,13 @@ def _ler_membro_csv(path: Path, membro: str) -> pd.DataFrame:
     with zipfile.ZipFile(path) as zf:
         with zf.open(membro) as f:
             bruto = f.read()
-    sep = _detectar_separador(bruto[:65536])
-    return pd.read_csv(io.BytesIO(bruto), sep=sep, dtype="string", encoding="utf-8-sig")
+    encoding = _detectar_encoding(bruto)
+    sep = _detectar_separador(bruto[:65536], encoding=encoding)
+    return pd.read_csv(io.BytesIO(bruto), sep=sep, dtype="string", encoding=encoding)
 
 
 def ler_setores_urbanos_basico_zip(path: Path, *, codigos_municipais: Iterable[str]) -> pd.DataFrame:
-    """Lê do arquivo Básico a classificação oficial urbana/rural dos setores.
-
-    No Censo 2022, `SITUACAO=Urbana` reúne as situações detalhadas 1, 2 e 3.
-    O recorte é explícito porque o painel analítico TIC–TIM de 2022 trabalha com
-    o universo setorial urbano, não com a soma indiscriminada de setores rurais.
-    """
+    """Lê do arquivo Básico a classificação oficial urbana/rural dos setores."""
     codigos = {str(c) for c in codigos_municipais}
     df = _ler_membro_csv(path, localizar_csv_basico_no_zip(path))
     mapa = {str(c).strip().casefold(): str(c) for c in df.columns}
@@ -88,11 +101,7 @@ def ler_demografia_setorial_zip(
     codigos_municipais: Iterable[str],
     setores_permitidos: Iterable[str] | None = None,
 ) -> pd.DataFrame:
-    """Lê somente os setores pertencentes ao universo configurado e, se informado, ao recorte espacial.
-
-    O código municipal é obtido dos sete primeiros dígitos de CD_SETOR. Valores
-    especiais permanecem ausentes: a rotina não os converte em zero.
-    """
+    """Lê somente os setores pertencentes ao universo configurado e ao recorte informado."""
     codigos = {str(c) for c in codigos_municipais}
     df = _ler_membro_csv(path, localizar_csv_demografia_no_zip(path))
 
@@ -117,12 +126,7 @@ def ler_demografia_setorial_zip(
 
 
 def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
-    """Agrega setores para as bandas canônicas da série longitudinal.
-
-    Segundo o dicionário oficial do Censo 2022, V01031–V01041 são as faixas
-    etárias de ambos os sexos: 0–4, 5–9, 10–14, 15–19, 20–24, 25–29,
-    30–39, 40–49, 50–59, 60–69 e 70+; V01006 é a quantidade de moradores.
-    """
+    """Agrega setores para as bandas canônicas da série longitudinal."""
     work = setores.copy()
     for coluna in COLUNAS_DEMOGRAFIA:
         bruto = work[coluna].astype("string").str.strip()
