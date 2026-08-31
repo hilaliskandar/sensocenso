@@ -2,8 +2,8 @@
 """Orquestrador do pipeline TIC–TIM de demografia e habitação.
 
 As etapas são implementadas incrementalmente. Uma etapa só deixa o estado de
-placeholder depois de possuir fonte, proveniência, QA e teste de regressão
-compatíveis com o caderno metodológico público.
+placeholder depois de possuir fonte, proveniência, QA e testes compatíveis com
+o caderno metodológico público.
 """
 
 from __future__ import annotations
@@ -20,7 +20,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tic_tim_demografia import etapa00, etapa01, etapa02, etapa02b, etapa02c  # noqa: E402
+from tic_tim_demografia import (  # noqa: E402
+    etapa00,
+    etapa01,
+    etapa02,
+    etapa02b,
+    etapa02c,
+    etapa03a,
+)
 
 
 @dataclass(frozen=True)
@@ -47,7 +54,8 @@ ETAPAS = [
     Etapa("02a", "gate semântico SIDRA para harmonização longitudinal", etapa02.executar),
     Etapa("02b", "coleta e harmonização longitudinal 2000–2010", etapa02b.executar),
     Etapa("02c", "agregação urbana 2022 e fechamento longitudinal 30×3", etapa02c.executar),
-    Etapa("03", "indicadores domiciliares", ainda_nao_implementada("indicadores domiciliares"), False),
+    Etapa("03a", "gate semântico e descoberta das fontes domiciliares", etapa03a.executar),
+    Etapa("03b", "indicadores domiciliares", ainda_nao_implementada("indicadores domiciliares"), False),
     Etapa("04", "CWR", ainda_nao_implementada("CWR"), False),
     Etapa("05", "ISAU e privação", ainda_nao_implementada("ISAU e privação"), False),
     Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano"), False),
@@ -63,7 +71,11 @@ ETAPAS = [
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raiz", type=Path, default=ROOT)
-    parser.add_argument("--etapa", choices=[e.codigo for e in ETAPAS] + ["implementadas", "todas"], default="implementadas")
+    parser.add_argument(
+        "--etapa",
+        choices=[e.codigo for e in ETAPAS] + ["implementadas", "todas"],
+        default="implementadas",
+    )
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
 
