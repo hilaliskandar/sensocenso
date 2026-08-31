@@ -18,6 +18,26 @@ fontes:
     values_base_url: "https://apisidra.ibge.gov.br/values"
     uso: "estrutura etária municipal de 2010, complementada pela Sinopse quando necessário"
 
+  sidra_2000_2010_domicilios:
+    instituicao: "IBGE/SIDRA"
+    tabela: 156
+    periodo: "2000, 2010"
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/156"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "domicílios, moradores no universo domiciliar compatível e tamanho médio histórico"
+    regra: "resolver variáveis e situação Total a partir do descritor; não presumir equivalência com população residente total"
+
+  sidra_2000_2010_unipessoais:
+    instituicao: "IBGE/SIDRA"
+    tabela: 185
+    periodo: "2000, 2010"
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/185"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "distribuição dos domicílios por número de moradores e domicílios unipessoais"
+    regra: "resolver estruturalmente a dimensão número de moradores; usar categoria de 1 morador e denominador compatível"
+
   censo2022_agregados_setor:
     instituicao: "IBGE"
     periodo: 2022
