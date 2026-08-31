@@ -4,19 +4,8 @@ import json
 from pathlib import Path
 
 from .config import carregar_fontes, carregar_municipios, carregar_parametros
+from .paths import ENV_DATA_ROOT, resolve_paths
 from .proveniencia import registrar_evento
-
-
-DIRETORIOS = [
-    "data/raw",
-    "data/interim",
-    "data/processed",
-    "outputs/tabelas",
-    "outputs/mapas",
-    "outputs/geodata",
-    "outputs/qa",
-    "manifestos",
-]
 
 
 def executar(raiz: Path) -> None:
@@ -25,9 +14,8 @@ def executar(raiz: Path) -> None:
     municipios = carregar_municipios(config_dir / "municipios.yml")
     parametros = carregar_parametros(config_dir / "parametros.yml")
     fontes = carregar_fontes(config_dir / "fontes.yml")
-
-    for rel in DIRETORIOS:
-        (raiz / rel).mkdir(parents=True, exist_ok=True)
+    paths = resolve_paths(raiz)
+    paths.create()
 
     resumo = {
         "municipios": len(municipios),
@@ -35,12 +23,14 @@ def executar(raiz: Path) -> None:
         "coroa_externa": sum(m.coroa == "externa" for m in municipios),
         "anos_censitarios": parametros["projeto"]["anos_censitarios"],
         "fontes_declaradas": sorted(fontes["fontes"].keys()),
+        "data_root": str(paths.data_root),
+        "data_root_externalizado": ENV_DATA_ROOT in __import__("os").environ,
     }
 
-    saida = raiz / "outputs/qa/etapa00_configuracao.json"
+    saida = paths.qa / "etapa00_configuracao.json"
     saida.write_text(json.dumps(resumo, ensure_ascii=False, indent=2), encoding="utf-8")
     registrar_evento(
-        raiz / "manifestos/execucao.jsonl",
+        paths.manifests / "execucao.jsonl",
         {"tipo": "etapa", "etapa": "00", "status": "OK", **resumo},
     )
     print(json.dumps(resumo, ensure_ascii=False, indent=2))
