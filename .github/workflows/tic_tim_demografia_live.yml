@@ -1,0 +1,53 @@
+name: TIC-TIM demografia - integracao viva
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/tic_tim_demografia_live.yml'
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: subprojetos/tic_tim_demografia_habitacao
+    env:
+      TIC_TIM_DATA_ROOT: ${{ runner.temp }}/tic_tim_demografia_data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Instala dependencias
+        run: python -m pip install -e '.[dev]'
+      - name: Executa testes offline antes da rede
+        run: pytest -q
+      - name: Etapa 00 - universo e estrutura
+        run: python scripts/run_pipeline.py --etapa 00
+      - name: Etapa 01 - metadados e indices publicos IBGE
+        run: python scripts/run_pipeline.py --etapa 01
+      - name: Etapa 02a - resolucao semantica SIDRA
+        run: python scripts/run_pipeline.py --etapa 02a
+      - name: Etapa 02b - harmonizacao 2000-2010
+        run: python scripts/run_pipeline.py --etapa 02b
+      - name: Etapa 02c - incorporacao urbana 2022
+        run: python scripts/run_pipeline.py --etapa 02c
+      - name: Lista artefatos produzidos
+        if: always()
+        run: |
+          find "$TIC_TIM_DATA_ROOT/outputs/qa" -maxdepth 3 -type f -print || true
+          find "$TIC_TIM_DATA_ROOT/processed/municipal" -maxdepth 2 -type f -print || true
+      - name: Publica QA e base municipal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-demografia-live-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/tic_tim_demografia_data/outputs/qa/**
+            ${{ runner.temp }}/tic_tim_demografia_data/metadata/**
+            ${{ runner.temp }}/tic_tim_demografia_data/processed/municipal/**
+          if-no-files-found: warn
+          retention-days: 14
