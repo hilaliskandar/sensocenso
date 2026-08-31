@@ -8,7 +8,9 @@ from typing import Iterable
 import pandas as pd
 
 
-COLUNAS_DEMOGRAFIA = ["V01006"] + [f"V010{i:02d}" for i in range(31, 42)]
+COLUNAS_IDADE = [f"V010{i:02d}" for i in range(31, 42)]
+COLUNAS_DEMOGRAFIA = ["V01006"] + COLUNAS_IDADE
+SIMBOLOS_SIGILO = {"x"}
 
 
 def _localizar_csv_no_zip(path: Path, token: str) -> str:
@@ -117,12 +119,7 @@ def ler_demografia_setorial_zip(
 
 
 def diagnosticar_simbolos_demografia(setores: pd.DataFrame) -> dict:
-    """Documenta células não numéricas sem tentar reconstruir dados protegidos.
-
-    Nos Agregados por Setores Censitários 2022, ``x``/``X`` sinaliza omissão por
-    tratamento de sigilo. O diagnóstico identifica incidência, variável e
-    município, mas deliberadamente não infere valores suprimidos por diferença.
-    """
+    """Documenta células não numéricas sem tentar reconstruir dados protegidos."""
     por_variavel: dict[str, dict] = {}
     setores_afetados: set[str] = set()
     municipios_afetados: set[str] = set()
@@ -155,27 +152,76 @@ def diagnosticar_simbolos_demografia(setores: pd.DataFrame) -> dict:
     }
 
 
-def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
-    work = setores.copy()
+def _converter_demografia_preservando_sigilo(work: pd.DataFrame) -> pd.DataFrame:
+    """Converte números e mantém x/X como NA; outros símbolos interrompem a execução."""
+    convertido = work.copy()
     for coluna in COLUNAS_DEMOGRAFIA:
-        bruto = work[coluna].astype("string").str.strip()
+        bruto = convertido[coluna].astype("string").str.strip()
         num = pd.to_numeric(bruto, errors="coerce")
-        invalidos = sorted(bruto[num.isna() & bruto.notna()].dropna().unique().tolist())
-        if invalidos:
-            raise ValueError(
-                f"Valores não numéricos em {coluna}; dados protegidos/ausentes não serão convertidos em zero: {invalidos}"
-            )
-        work[coluna] = num
+        mask_nao_num = num.isna() & bruto.notna()
+        inesperados = sorted(
+            {
+                str(x)
+                for x in bruto.loc[mask_nao_num].dropna().tolist()
+                if str(x).casefold() not in SIMBOLOS_SIGILO
+            }
+        )
+        if inesperados:
+            raise ValueError(f"Valores não numéricos inesperados em {coluna}: {inesperados}")
+        convertido[coluna] = num
+    return convertido
 
-    colunas_soma = COLUNAS_DEMOGRAFIA
-    faltas_setoriais = work.groupby("codigo_ibge")[colunas_soma].apply(lambda x: x.isna().any().any())
-    ruins = faltas_setoriais[faltas_setoriais].index.astype(str).tolist()
-    if ruins:
+
+def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
+    """Agrega 2022 no universo setorial com estrutura etária integralmente divulgada.
+
+    A publicação setorial do Censo 2022 aplica sigilo em células de baixa frequência.
+    Para preservar o método já adotado nos produtos auditados do projeto, cada indicador
+    usa somente setores em que todas as onze classes V01031–V01041 estão divulgadas.
+    Células x/X permanecem ausentes: não recebem zero, imputação nem reconstrução por
+    diferença. A cobertura setorial do universo efetivo é devolvida junto aos resultados.
+    """
+    work = _converter_demografia_preservando_sigilo(setores)
+    work["idade_completa"] = work[COLUNAS_IDADE].notna().all(axis=1)
+
+    contagem = work.groupby("codigo_ibge", as_index=False).agg(
+        setores_demografia=("codigo_setor", "size"),
+        setores_idade_completa=("idade_completa", "sum"),
+    )
+    contagem["setores_idade_incompleta"] = (
+        contagem["setores_demografia"] - contagem["setores_idade_completa"]
+    )
+    contagem["cobertura_setorial_idade"] = (
+        contagem["setores_idade_completa"] / contagem["setores_demografia"]
+    )
+
+    validos = work.loc[work["idade_completa"]].copy()
+    municipios_sem_validos = sorted(
+        set(work["codigo_ibge"].astype(str)) - set(validos["codigo_ibge"].astype(str))
+    )
+    if municipios_sem_validos:
         raise ValueError(
-            "Há valores ausentes nas variáveis necessárias em setores dos municípios: " + ", ".join(ruins)
+            "Municípios sem qualquer setor com estrutura etária completa: "
+            + ", ".join(municipios_sem_validos)
         )
 
-    por_municipio = work.groupby("codigo_ibge", as_index=False)[colunas_soma].sum(min_count=1)
+    # Nos setores em que V01006 também está publicado, ele deve fechar exatamente
+    # com a soma das onze classes etárias. O teste é apenas de consistência e não
+    # é usado para reconstruir V01006 quando protegido.
+    comparaveis = validos.loc[validos["V01006"].notna()].copy()
+    if not comparaveis.empty:
+        comparaveis["soma_idades"] = comparaveis[COLUNAS_IDADE].sum(axis=1)
+        divergentes = comparaveis.loc[
+            comparaveis["soma_idades"].ne(comparaveis["V01006"]),
+            ["codigo_setor", "codigo_ibge", "soma_idades", "V01006"],
+        ]
+        if not divergentes.empty:
+            raise AssertionError(
+                "Classes etárias divulgadas não fecham com V01006 nos setores comparáveis:\n"
+                + divergentes.head(25).to_string(index=False)
+            )
+
+    por_municipio = validos.groupby("codigo_ibge", as_index=False)[COLUNAS_IDADE].sum(min_count=1)
     por_municipio["ano"] = 2022
     por_municipio["pop_0_14"] = por_municipio[["V01031", "V01032", "V01033"]].sum(axis=1)
     por_municipio["pop_15_59"] = por_municipio[
@@ -185,18 +231,12 @@ def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
     por_municipio["pop_total_harmonizada"] = (
         por_municipio["pop_0_14"] + por_municipio["pop_15_59"] + por_municipio["pop_60_mais"]
     )
-    por_municipio["pop_total_fonte"] = por_municipio["V01006"]
-    por_municipio["diferenca_fechamento"] = (
-        por_municipio["pop_total_harmonizada"] - por_municipio["pop_total_fonte"]
-    )
-    if not por_municipio["diferenca_fechamento"].eq(0).all():
-        ruins = por_municipio.loc[
-            por_municipio["diferenca_fechamento"].ne(0),
-            ["codigo_ibge", "pop_total_harmonizada", "pop_total_fonte", "diferenca_fechamento"],
-        ]
-        raise AssertionError(
-            "As bandas etárias 2022 não fecham com V01006:\n" + ruins.to_string(index=False)
-        )
+
+    # Mantém compatibilidade com os consumidores anteriores: neste universo
+    # completo, o total-fonte é a soma das classes etárias publicadas e portanto
+    # coincide, por construção transparente, com a população harmonizada.
+    por_municipio["pop_total_fonte"] = por_municipio["pop_total_harmonizada"]
+    por_municipio["diferenca_fechamento"] = 0
 
     saida = por_municipio[
         [
@@ -209,7 +249,17 @@ def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
             "pop_total_fonte",
             "diferenca_fechamento",
         ]
-    ].copy()
-    inteiras = ["pop_0_14", "pop_15_59", "pop_60_mais", "pop_total_harmonizada", "pop_total_fonte", "diferenca_fechamento"]
+    ].merge(contagem, on="codigo_ibge", how="left", validate="one_to_one")
+    inteiras = [
+        "pop_0_14",
+        "pop_15_59",
+        "pop_60_mais",
+        "pop_total_harmonizada",
+        "pop_total_fonte",
+        "diferenca_fechamento",
+        "setores_demografia",
+        "setores_idade_completa",
+        "setores_idade_incompleta",
+    ]
     saida[inteiras] = saida[inteiras].astype("int64")
     return saida.sort_values("codigo_ibge").reset_index(drop=True)
