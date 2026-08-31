@@ -26,3 +26,7 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# TIC-TIM demografia/habitação: dados e resultados são reconstruíveis localmente.
+subprojetos/tic_tim_demografia_habitacao/data/
+subprojetos/tic_tim_demografia_habitacao/.cache/
