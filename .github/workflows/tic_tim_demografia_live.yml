@@ -1,8 +1,9 @@
 name: TIC-TIM demografia live
 
 # Execucao viva deliberadamente separada do CI offline. O push neste arquivo
-# serve tambem para repetir o teste integral e capturar diagnosticos de sigilo
-# antes de qualquer decisao sobre dados omitidos nos agregados setoriais.
+# repete o teste integral da regra complete-case por indicador: celulas x/X
+# permanecem ausentes e as bandas etarias usam apenas setores integralmente
+# divulgados, sem imputacao ou reconstrucao de valores protegidos.
 on:
   workflow_dispatch:
   push:
