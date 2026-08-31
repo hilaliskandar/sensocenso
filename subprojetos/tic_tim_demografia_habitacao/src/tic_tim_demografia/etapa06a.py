@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 import unicodedata
+import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -40,7 +42,11 @@ def _normalizar(valor: object) -> str:
 
 
 def _texto_original(valores: list[object]) -> str:
-    return " | ".join(" ".join(str(v or "").replace("\n", " ").split()).strip() for v in valores if v not in (None, ""))
+    return " | ".join(
+        " ".join(str(v or "").replace("\n", " ").split()).strip()
+        for v in valores
+        if v not in (None, "")
+    )
 
 
 def _categoria(texto_norm: str) -> str | None:
@@ -53,8 +59,7 @@ def _categoria(texto_norm: str) -> str | None:
     return None
 
 
-def inspecionar_dicionario(path: Path) -> dict:
-    wb = load_workbook(path, read_only=True, data_only=True)
+def _inspecionar_workbook(wb, origem: str) -> dict:
     achados: dict[str, list[dict]] = {k: [] for k in ATRIBUTOS}
     for ws in wb.worksheets:
         linhas = [list(row) for row in ws.iter_rows(values_only=True)]
@@ -78,6 +83,7 @@ def inspecionar_dicionario(path: Path) -> dict:
             for atributo in atributos:
                 achados[atributo].append(
                     {
+                        "origem": origem,
                         "planilha": ws.title,
                         "linha": i + 1,
                         "texto": original,
@@ -86,8 +92,34 @@ def inspecionar_dicionario(path: Path) -> dict:
                         "codigos": codigos,
                     }
                 )
-    wb.close()
     return achados
+
+
+def _mesclar_achados(destino: dict, origem: dict) -> None:
+    for atributo, itens in origem.items():
+        destino.setdefault(atributo, []).extend(itens)
+
+
+def inspecionar_dicionario(path: Path) -> dict:
+    achados: dict[str, list[dict]] = {k: [] for k in ATRIBUTOS}
+    if path.suffix.casefold() == ".zip":
+        with zipfile.ZipFile(path) as zf:
+            membros = [m for m in zf.namelist() if m.casefold().endswith(".xlsx")]
+            if not membros:
+                raise ValueError(f"ZIP de documentação sem XLSX: {path}")
+            for membro in membros:
+                wb = load_workbook(io.BytesIO(zf.read(membro)), read_only=True, data_only=True)
+                try:
+                    _mesclar_achados(achados, _inspecionar_workbook(wb, membro))
+                finally:
+                    wb.close()
+        return achados
+
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        return _inspecionar_workbook(wb, path.name)
+    finally:
+        wb.close()
 
 
 def resumir_codigos(achados: dict[str, list[dict]]) -> dict:
@@ -126,10 +158,10 @@ def executar(raiz: Path) -> None:
         raise ValueError("05b não registrou dicionário oficial resolvedor de bueiro.")
 
     raw_doc = paths.raw / "ibge" / "censo2022" / "isau" / "documentacao"
-    candidatos = sorted(raw_doc.glob("*.xlsx"))
+    candidatos = sorted(list(raw_doc.glob("*.xlsx")) + list(raw_doc.glob("*.zip")))
     if not candidatos:
         raise FileNotFoundError(
-            "Nenhum dicionário XLSX materializado por 05b. A etapa 06a não presume nome ou códigos."
+            "Nenhum dicionário XLSX/ZIP materializado por 05b. A etapa 06a não presume nome ou códigos."
         )
 
     resultados = []
@@ -151,7 +183,7 @@ def executar(raiz: Path) -> None:
                 {"arquivo": arquivo.name, "erro": f"{type(exc).__name__}: {exc}"}
             )
 
-    if not resultados:
+    if not any("resumo_codigos" in item for item in resultados):
         raise ValueError("Nenhuma evidência semântica de atributos de entorno encontrada no dicionário oficial.")
 
     qa = {
