@@ -69,8 +69,9 @@ def localizar_primeira_alternativa(colunas: Iterable[str], alternativas: Iterabl
 
 
 def resolver_colunas_harmonizacao(df: pd.DataFrame, nome_classificacao_idade: str) -> dict[str, str | None]:
-    idade_base = _norm(nome_classificacao_idade)
-    termo_idade = "idade" if "idade" in idade_base else idade_base
+    # O nome completo vem do descritor da própria tabela e evita falsos positivos
+    # como "unIDADE de medida" quando se buscava apenas pelo fragmento "idade".
+    termo_idade = _norm(nome_classificacao_idade)
     return {
         "municipio_codigo": localizar_coluna(df.columns, termos_obrigatorios=("municipio", "codigo")),
         "municipio_nome": localizar_coluna(
