@@ -3,6 +3,7 @@ import pytest
 
 from tic_tim_demografia.harmonizacao.sidra_valores import (
     agregar_bandas_etarias,
+    converter_valores_sidra,
     normalizar_resposta_sidra,
     resolver_colunas_harmonizacao,
 )
@@ -64,6 +65,11 @@ def test_multiplas_variaveis_falham_em_vez_de_somar():
             codigo_para_banda={"1": "0_14", "2": "15_59", "3": "60_mais"},
             ano_esperado=2000,
         )
+
+
+def test_hifen_convencional_vira_zero():
+    convertido = converter_valores_sidra(pd.Series(["-", "0", "12"]))
+    assert convertido.tolist() == [0, 0, 12]
 
 
 def test_valor_especial_nao_vira_zero():
