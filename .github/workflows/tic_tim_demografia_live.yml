@@ -44,13 +44,16 @@ jobs:
         run: python scripts/run_pipeline.py --etapa 03b
       - name: Executa etapa 03c
         run: python scripts/run_pipeline.py --etapa 03c
+      - name: Executa etapa 04
+        run: python scripts/run_pipeline.py --etapa 04
       - name: Lista artefatos
         if: always()
         run: |
           find /tmp/tic_tim_demografia_data/outputs/qa -maxdepth 3 -type f -print || true
           find /tmp/tic_tim_demografia_data/processed/municipal -maxdepth 2 -type f -print || true
+          find /tmp/tic_tim_demografia_data/processed/setorial -maxdepth 2 -type f -print || true
           find /tmp/tic_tim_demografia_data/raw/ibge/sidra/descritores -maxdepth 1 -type f -print || true
-      - name: Publica QA e base municipal
+      - name: Publica QA e bases analiticas
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -59,6 +62,7 @@ jobs:
             /tmp/tic_tim_demografia_data/outputs/qa/**
             /tmp/tic_tim_demografia_data/metadata/**
             /tmp/tic_tim_demografia_data/processed/municipal/**
+            /tmp/tic_tim_demografia_data/processed/setorial/**
             /tmp/tic_tim_demografia_data/raw/ibge/sidra/descritores/**
           if-no-files-found: warn
           retention-days: 14
