@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import requests
 
@@ -32,12 +33,7 @@ def construir_caminho_sidra(
     formato: str = "a",
     decimais: str = "m",
 ) -> str:
-    """Constrói caminho oficial `/values` do SIDRA de forma determinística.
-
-    `classificacoes` usa IDs sem o prefixo `c`; por exemplo `{2: [4, 5]}`
-    gera `/c2/4,5`. A função não inventa IDs: eles devem vir do descritor da
-    tabela e ser registrados na configuração da etapa analítica.
-    """
+    """Constrói caminho oficial `/values` do SIDRA de forma determinística."""
     partes = [
         f"t/{int(tabela)}",
         f"n{int(nivel_territorial)}/{_lista_segmento(localidades)}",
@@ -58,17 +54,50 @@ def dividir_lotes(itens: Sequence[str], tamanho: int) -> list[list[str]]:
 
 @dataclass(frozen=True)
 class SidraClient:
-    timeout: int = 120
-    user_agent: str = "tic-tim-demografia/0.1"
+    """Cliente resiliente para o webservice SIDRA.
+
+    O serviço público pode apresentar indisponibilidades transitórias. O cliente
+    usa timeout de conexão curto, timeout de leitura mais amplo e repetição com
+    espera exponencial apenas para erros de rede e respostas 429/5xx. Erros 4xx
+    de consulta não são mascarados por tentativas sucessivas.
+    """
+
+    connect_timeout: int = 20
+    read_timeout: int = 180
+    tentativas: int = 4
+    backoff_inicial: float = 2.0
+    user_agent: str = "tic-tim-demografia/0.1 (+pipeline-reprodutivel)"
 
     def _get_json(self, url: str) -> Any:
-        resposta = requests.get(
-            url,
-            timeout=self.timeout,
-            headers={"User-Agent": self.user_agent},
-        )
-        resposta.raise_for_status()
-        return resposta.json()
+        ultimo_erro: Exception | None = None
+        for tentativa in range(1, self.tentativas + 1):
+            try:
+                resposta = requests.get(
+                    url,
+                    timeout=(self.connect_timeout, self.read_timeout),
+                    headers={"User-Agent": self.user_agent, "Accept": "application/json"},
+                )
+                if resposta.status_code == 429 or resposta.status_code >= 500:
+                    resposta.raise_for_status()
+                resposta.raise_for_status()
+                return resposta.json()
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                ultimo_erro = exc
+            except requests.HTTPError as exc:
+                ultimo_erro = exc
+                status = exc.response.status_code if exc.response is not None else None
+                if status is not None and 400 <= status < 500 and status != 429:
+                    raise
+            except requests.JSONDecodeError:
+                raise
+
+            if tentativa < self.tentativas:
+                espera = self.backoff_inicial * (2 ** (tentativa - 1))
+                time.sleep(espera)
+
+        raise RuntimeError(
+            f"SIDRA indisponível após {self.tentativas} tentativas para {url}: {ultimo_erro}"
+        ) from ultimo_erro
 
     def descritor(self, tabela: int) -> Any:
         return self._get_json(f"{BASE_DESCRIPTOR}/t/{tabela}")
@@ -123,11 +152,7 @@ def baixar_valores_municipais_em_lotes(
     manifesto: Path | None = None,
     cliente: SidraClient | None = None,
 ) -> list[Path]:
-    """Baixa respostas SIDRA municipais em lotes pequenos e auditáveis.
-
-    A divisão em lotes evita consultas gigantes e permite repetir apenas a
-    fração que falhou. Cada resposta é preservada integralmente em `raw/`.
-    """
+    """Baixa respostas SIDRA municipais em lotes pequenos e auditáveis."""
     cliente = cliente or SidraClient()
     codigos = [str(c) for c in codigos_municipais]
     saidas: list[Path] = []
