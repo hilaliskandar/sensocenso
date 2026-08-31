@@ -6,7 +6,7 @@ Este subprojeto reconstrói, de forma reprodutível, o fluxo analítico utilizad
 
 - Relatório regional: redação encerrada e em revisão humana.
 - Caderno metodológico público: versão conceitualmente estabilizada.
-- Pipeline: etapas 00 e 01 já possuem implementação funcional de configuração, proveniência e descoberta/congelamento inicial das fontes.
+- Pipeline: etapas 00, 01, 02a e 02b implementadas. A reconstrução municipal 2000–2010 já possui aquisição em lotes, harmonização etária, proveniência e gate de regressão contra sentinelas extraídas da base v0.16 auditada.
 
 ## Princípios de reprodução
 
@@ -19,6 +19,7 @@ Este subprojeto reconstrói, de forma reprodutível, o fluxo analítico utilizad
 7. Produzir artefatos intermediários auditáveis e hashes quando aplicável.
 8. Reproduzir os elementos visuais a partir das bases analíticas, e não a partir de imagens finais.
 9. Não depender de Google Drive, nomes de usuário ou caminhos particulares de máquina.
+10. Usar produtos históricos auditados somente como oráculos de QA, nunca como entrada para reconstruir os resultados.
 
 ## Estrutura do código
 
@@ -37,10 +38,15 @@ subprojetos/tic_tim_demografia_habitacao/
 │   ├── proveniencia.py
 │   ├── etapa00.py
 │   ├── etapa01.py
-│   └── fontes/
+│   ├── etapa02.py
+│   ├── etapa02b.py
+│   ├── fontes/
+│   ├── harmonizacao/
+│   └── qa/
 ├── scripts/
 │   └── run_pipeline.py
 ├── tests/
+│   └── fixtures/
 └── docs/
 ```
 
@@ -58,6 +64,8 @@ pip install -e '.[dev]'
 pytest
 python scripts/run_pipeline.py --etapa 00
 python scripts/run_pipeline.py --etapa 01
+python scripts/run_pipeline.py --etapa 02a
+python scripts/run_pipeline.py --etapa 02b
 ```
 
 Para externalizar o armazenamento:
@@ -89,9 +97,19 @@ Prevê download ou leitura automatizada de:
 
 Cada aquisição deve registrar URL final, data, tamanho e SHA-256. Arquivos em `raw/` não são substituídos silenciosamente.
 
-### 02. Harmonização longitudinal
+### 02a. Gate semântico SIDRA
 
-Reconstrói a série municipal 2000–2010–2022, com prioridade para as faixas 0–14, 15–59 e 60+; calcula população, participação etária, razão de envelhecimento, crescimento populacional, crescimento dos domicílios particulares ocupados e tamanho médio aproximado dos domicílios.
+Lê os descritores oficiais, identifica classificações e categorias por rótulos, resolve sexo/situação totais e mapeia somente faixas etárias inteiramente contidas em 0–14, 15–59 e 60+. Categorias que atravessem os limites das bandas não são interpoladas.
+
+### 02b. Harmonização longitudinal 2000–2010
+
+Baixa os 30 municípios em lotes auditáveis, preserva as respostas JSON brutas e gera `processed/municipal/base_longitudinal_2000_2010.parquet` e `.csv`. A etapa rejeita valores especiais convertidos implicitamente em zero, múltiplas variáveis numa mesma soma, duplicações de chave e universo municipal incompleto.
+
+Ao final, executa um gate de regressão independente. O arquivo `tests/fixtures/oraculo_longitudinal_2000_2010_sentinelas.csv` contém sentinelas verificadas na v0.16 auditada, incluindo Jundiaí e Santo Antônio de Posse, casos que exigiram atenção especial durante o fechamento histórico. O oráculo é usado apenas para comparação exata; nunca participa do cálculo.
+
+### 02c. Incorporação de 2022
+
+Pendente. Incorporará a fotografia municipal de 2022 a partir dos agregados censitários reobtidos pelo próprio pipeline, fechando a matriz 30 × 3 sem recorrer ao painel histórico como fonte de cálculo.
 
 ### 03. Formação e transformação do estoque domiciliar ocupado
 
@@ -140,8 +158,14 @@ Gera automaticamente tabelas de síntese, matrizes municipais, arquivos geoespac
 
 Executa testes de unicidade de chaves, universos, denominadores, faixas válidas, cobertura espacial, equivalência de agregações, estabilidade P75/P80 e regressão contra valores auditados.
 
+## Gate de regressão histórico
+
+A v0.16 auditada estabeleceu a referência de fechamento da série: 30/30 municípios completos nos três censos, 630 registros de faixas etárias em 2000, 630 em 2010, diferença máxima zero no QA dos totais de 2000, Santo Antônio de Posse fechado em 20.650 habitantes em 2010 e correção material de Jundiaí documentada. Esses fatos orientam os testes, mas o novo pipeline precisa reencontrar os valores a partir das fontes oficiais.
+
+Nesta fase inicial, o fixture versionado usa dez municípios sentinela × dois anos. Antes do fechamento da etapa 02 como um todo, o oráculo será expandido para os 30 municípios × 2000/2010 e, depois, para 30 × 3 censos.
+
 ## Regra de desenvolvimento
 
 O código é construído em etapas pequenas e testáveis. Os valores de referência usados nos testes são extraídos dos produtos auditados do projeto, mas nunca são usados como substitutos das fontes originais. Dados brutos não são versionados quando a fonte pública permite reobtenção automatizada.
 
-A meta operacional seguinte é selecionar, a partir dos snapshots congelados e dos descritores SIDRA, as consultas e arquivos necessários para produzir a primeira base longitudinal municipal 2000–2010–2022 em `processed/municipal/`, com QA automático contra os resultados auditados.
+A meta operacional seguinte é implementar a aquisição e normalização municipal de 2022 diretamente dos agregados censitários oficiais, fechar `processed/municipal/base_longitudinal_2000_2010_2022.parquet` e então ampliar o gate de regressão para todos os 30 municípios nos três censos.
