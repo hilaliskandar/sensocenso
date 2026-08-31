@@ -6,9 +6,10 @@ Este subprojeto reconstrói, de forma reprodutível, o fluxo analítico utilizad
 
 - Relatório regional: redação encerrada e em revisão humana.
 - Caderno metodológico público: versão conceitualmente estabilizada.
-- Pipeline: etapas 00, 01, 02a e 02b implementadas e validadas em execução viva contra as fontes públicas.
+- Pipeline longitudinal: etapas 00, 01, 02a, 02b e 02c implementadas e validadas em execução viva contra fontes públicas.
 - A etapa 02b reconstruiu 60 linhas (30 municípios × 2000/2010), sem nulos nas três bandas etárias, e passou o gate de regressão com zero divergência nas 20 chaves sentinela.
-- A etapa 02c está implementada, mas ainda não é considerada fechada: os Agregados por Setores Censitários de 2022 contêm células `x/X` omitidas pelo IBGE por tratamento de sigilo. O pipeline registra a incidência e interrompe a agregação em vez de transformar valores protegidos em zero ou inferi-los por diferença.
+- A etapa 02c fechou a matriz 30 × 3: 90 linhas, 30 municípios e 2000/2010/2022. Para 2022, o universo é `SITUACAO=Urbana`; as bandas etárias usam somente setores em que V01031–V01041 estão simultaneamente divulgadas. A regressão contra dez sentinelas auditadas resultou em zero divergências.
+- Etapa 03a implementada: congela os descritores SIDRA 156 e 185, resolve semanticamente situação do domicílio e número de moradores e identifica, no índice oficial congelado do Censo 2022, os arquivos `Básico` e `Características do domicílio 1`. Nenhum indicador domiciliar é calculado enquanto variáveis e denominadores ainda forem ambíguos.
 
 ## Princípios de reprodução
 
@@ -44,6 +45,7 @@ subprojetos/tic_tim_demografia_habitacao/
 │   ├── etapa02.py
 │   ├── etapa02b.py
 │   ├── etapa02c.py
+│   ├── etapa03a.py
 │   ├── fontes/
 │   ├── harmonizacao/
 │   └── qa/
@@ -71,6 +73,7 @@ python scripts/run_pipeline.py --etapa 01
 python scripts/run_pipeline.py --etapa 02a
 python scripts/run_pipeline.py --etapa 02b
 python scripts/run_pipeline.py --etapa 02c
+python scripts/run_pipeline.py --etapa 03a
 ```
 
 Para externalizar o armazenamento:
@@ -80,7 +83,7 @@ export TIC_TIM_DATA_ROOT=/dados/tic_tim_demografia
 python scripts/run_pipeline.py --etapa implementadas
 ```
 
-A etapa 01 congela os descritores SIDRA das tabelas 1518 e 3107 e snapshots dos índices públicos do IBGE para agregados setoriais 2022, características urbanísticas do entorno, FCU e CNEFE. Esses snapshots documentam exatamente o catálogo disponível na execução antes que arquivos específicos sejam selecionados e baixados.
+A etapa 01 congela os descritores SIDRA das tabelas 1518, 3107, 156 e 185 e snapshots dos índices públicos do IBGE para agregados setoriais 2022, características urbanísticas do entorno, FCU e CNEFE. Esses snapshots documentam exatamente o catálogo disponível na execução antes que arquivos específicos sejam selecionados e baixados.
 
 ## Etapas do pipeline
 
@@ -90,7 +93,7 @@ Define os 30 municípios, anos censitários, versões das fontes, diretórios, p
 
 ### 01. Aquisição das fontes
 
-Prevê download ou leitura automatizada de Censo 2000/SIDRA, Censo 2010/SIDRA, agregados setoriais 2022, Pesquisa Urbanística do Entorno, malhas, FCU e bases auxiliares necessárias. Cada aquisição registra URL final, data, tamanho e SHA-256. Arquivos em `raw/` não são substituídos silenciosamente.
+Baixa/congela descritores SIDRA e índices de publicação do IBGE. Cada aquisição registra URL final, data, tamanho e SHA-256. Arquivos em `raw/` não são substituídos silenciosamente.
 
 ### 02a. Gate semântico SIDRA
 
@@ -104,15 +107,26 @@ A execução viva fechou 60 linhas, 30 municípios, dois anos, zero nulos nas tr
 
 ### 02c. Incorporação de 2022
 
-A etapa identifica os arquivos `Básico` e `Demografia` no índice oficial congelado, lê as codificações efetivamente publicadas, seleciona setores com `SITUACAO=Urbana` e prepara a agregação das variáveis V01031–V01041 em 0–14, 15–59 e 60+.
+Identifica os arquivos `Básico` e `Demografia` no índice oficial congelado e seleciona `SITUACAO=Urbana`. As três bandas são calculadas somente sobre setores em que V01031–V01041 estão simultaneamente divulgadas. `x/X` permanece ausente: não é zero, não é imputado e não é reconstruído por diferença.
 
-O arquivo setorial definitivo aplica tratamento de sigilo. A Nota metodológica n. 06 do Censo 2022 informa que valores omitidos são preenchidos com `x`, inclusive após recodificação global quando ainda restam células de frequência 1 ou 2. Por isso a implementação não transforma `x/X` em zero e não tenta recuperar valores protegidos por diferença. Antes de interromper a etapa, gera `outputs/qa/etapa02c_sigilo_demografia_2022.json`, com incidência por variável, município e setor.
+Na execução viva de fechamento foram observados 9.087 setores urbanos no `Básico`, 8.920 com linha no arquivo de demografia e 8.274 com estrutura etária completa. A cobertura setorial municipal da estrutura etária variou de 75,0% a aproximadamente 96,35%. Nos setores em que V01006 e todas as classes são públicas, o fechamento interno teve diferença máxima absoluta zero. A matriz final contém 90 linhas e o gate de regressão de 2022 apresentou zero divergências nas dez sentinelas.
 
-A próxima decisão metodológica deve preservar simultaneamente dois requisitos: manter o universo urbano utilizado no relatório e não violar o tratamento de sigilo do IBGE. A solução será escolhida apenas depois de quantificar a incidência das omissões e confrontar alternativas públicas compatíveis com o mesmo universo.
+Produtos principais:
 
-### 03. Formação e transformação do estoque domiciliar ocupado
+- `processed/municipal/base_longitudinal_2000_2010_2022.parquet`;
+- `processed/municipal/base_longitudinal_2000_2010_2022.csv`;
+- `outputs/qa/etapa02c_cobertura_idade_2022.csv`;
+- `outputs/qa/etapa02c_harmonizacao_2022_urbano.json`.
 
-Calcula a variação de DPO, a diferença entre crescimento domiciliar e populacional, domicílios unipessoais e demais variáveis utilizadas para caracterizar transformação dos arranjos domiciliares.
+### 03a. Gate semântico e descoberta das fontes domiciliares
+
+Prepara a reprodução dos indicadores de domicílios sem reutilizar as planilhas históricas como fonte de cálculo. A etapa 01 congela os descritores das tabelas SIDRA 156 e 185. A 03a resolve semanticamente a situação do domicílio, identifica estruturalmente a dimensão de número de moradores quando o rótulo variar e localiza no catálogo 2022 os arquivos `Básico` e `Características do domicílio 1`.
+
+A etapa termina deliberadamente antes do cálculo e grava `outputs/qa/etapa03a_selecao_fontes_domicilios.json`. Permanecem como gates para a 03b: resolver as variáveis/medidas da tabela 156; confirmar o denominador da participação de unipessoais; resolver V00017–V00026 e seu universo no dicionário 2022; e confirmar a fonte exata do tamanho médio domiciliar de 2022.
+
+### 03b. Formação e transformação do estoque domiciliar ocupado
+
+Pendente. Deverá reproduzir DPO, crescimento de DPO, divergência entre crescimento domiciliar e populacional, tamanho médio e domicílios unipessoais em 2000, 2010 e 2022. Não poderá substituir o universo domiciliar próprio pela população urbana da etapa 02c sem demonstração de equivalência.
 
 ### 04. Renovação demográfica recente
 
@@ -154,7 +168,7 @@ Executa testes de unicidade de chaves, universos, denominadores, faixas válidas
 
 A v0.16 auditada estabeleceu a referência de fechamento da série: 30/30 municípios completos nos três censos, 630 registros de faixas etárias em 2000, 630 em 2010, Santo Antônio de Posse fechado em 20.650 habitantes em 2010 e correção material de Jundiaí documentada. Esses fatos orientam os testes, mas o novo pipeline precisa reencontrar os valores a partir das fontes oficiais.
 
-O fixture versionado usa dez municípios sentinela × dois anos para 2000/2010 e dez sentinelas para o painel urbano de 2022. Os oráculos são usados somente como comparação de regressão, nunca como entrada de cálculo.
+Os fixtures atuais usam dez municípios sentinela × dois anos para 2000/2010 e dez sentinelas para o painel urbano de 2022. Os oráculos são usados somente como comparação de regressão, nunca como entrada de cálculo. Antes do fechamento global do subprojeto, o gate deverá ser ampliado para os 30 municípios × 3 censos e para os indicadores domiciliares reconstruídos.
 
 ## Regra de desenvolvimento
 
