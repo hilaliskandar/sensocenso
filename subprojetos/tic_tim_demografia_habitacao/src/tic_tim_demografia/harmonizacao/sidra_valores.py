@@ -88,6 +88,28 @@ def resolver_colunas_harmonizacao(df: pd.DataFrame, nome_classificacao_idade: st
     }
 
 
+def converter_valores_sidra(bruto: pd.Series) -> pd.Series:
+    """Converte contagens SIDRA preservando a semântica dos sinais convencionais.
+
+    Segundo as convenções tabulares do IBGE, ``-`` significa dado numérico igual
+    a zero não resultante de arredondamento. Por isso somente esse sinal é
+    convertido explicitamente em zero. ``..``, ``...``, ``x`` e quaisquer outros
+    símbolos continuam bloqueando a etapa, pois significam não aplicável,
+    indisponível, omitido ou situação não interpretada.
+    """
+    texto = bruto.astype("string").str.strip()
+    texto = texto.mask(texto.eq("-"), "0")
+    numeric = pd.to_numeric(texto, errors="coerce")
+    invalidos = sorted(texto[numeric.isna() & texto.notna()].dropna().unique().tolist())
+    if invalidos:
+        raise ValueError(
+            "Valores SIDRA não numéricos encontrados; apenas o sinal convencional '-' "
+            "é convertido em zero conforme convenção do IBGE. Ausência/supressão não será "
+            f"convertida em zero: {invalidos}"
+        )
+    return numeric
+
+
 def agregar_bandas_etarias(
     df: pd.DataFrame,
     *,
@@ -122,15 +144,7 @@ def agregar_bandas_etarias(
     if desconhecidas:
         raise ValueError(f"Categorias etárias não mapeadas retornadas pelo SIDRA: {desconhecidas}")
 
-    bruto = work[str(colunas["valor"])].astype(str).str.strip()
-    numeric = pd.to_numeric(bruto, errors="coerce")
-    invalidos = sorted(bruto[numeric.isna()].unique().tolist())
-    if invalidos:
-        raise ValueError(
-            "Valores SIDRA não numéricos encontrados; ausência/supressão não será convertida em zero: "
-            f"{invalidos}"
-        )
-    work["valor"] = numeric.astype("int64")
+    work["valor"] = converter_valores_sidra(work[str(colunas["valor"])]).astype("int64")
 
     agregado = (
         work.groupby(["codigo_ibge", "municipio", "ano", "banda"], as_index=False)["valor"]
