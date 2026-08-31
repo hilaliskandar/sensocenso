@@ -8,6 +8,10 @@ on:
     paths:
       - '.github/workflows/tic_tim_demografia_live.yml'
       - 'subprojetos/tic_tim_demografia_habitacao/**'
+  pull_request:
+    paths:
+      - '.github/workflows/tic_tim_demografia_live.yml'
+      - 'subprojetos/tic_tim_demografia_habitacao/**'
 
 jobs:
   live:
