@@ -323,7 +323,11 @@ def executar(raiz: Path) -> None:
     d_calc = calcular_d(
         sem_bueiro["domicilios"], sem_bueiro["moradores"], sem_bueiro["faces"]
     )
-    base = pd.concat([aer, d_audit, d_calc], axis=1).reset_index()
+    d_metricas = d_calc[["D_exp", "D_priv", "D", "D1", "D3"]].copy()
+    base = pd.concat([aer, d_audit, d_metricas], axis=1).reset_index()
+    if base.columns.duplicated().any():
+        duplicadas = base.columns[base.columns.duplicated()].tolist()
+        raise AssertionError(f"Saída 05c contém colunas duplicadas: {duplicadas}")
     base = universo.merge(base, on="codigo_setor", how="left", validate="one_to_one")
 
     dominios = ["A", "E", "R", "D"]
