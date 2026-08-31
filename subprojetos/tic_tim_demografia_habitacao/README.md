@@ -6,7 +6,7 @@ Este subprojeto reconstrói, de forma reprodutível, o fluxo analítico utilizad
 
 - Relatório regional: redação encerrada e em revisão humana.
 - Caderno metodológico público: versão conceitualmente estabilizada.
-- Pipeline: início da reconstrução em código a partir dos produtos auditados e da documentação metodológica.
+- Pipeline: etapas 00 e 01 já possuem implementação funcional de configuração, proveniência e descoberta/congelamento inicial das fontes.
 
 ## Princípios de reprodução
 
@@ -18,8 +18,9 @@ Este subprojeto reconstrói, de forma reprodutível, o fluxo analítico utilizad
 6. Registrar parâmetros e universos efetivos de cada etapa.
 7. Produzir artefatos intermediários auditáveis e hashes quando aplicável.
 8. Reproduzir os elementos visuais a partir das bases analíticas, e não a partir de imagens finais.
+9. Não depender de Google Drive, nomes de usuário ou caminhos particulares de máquina.
 
-## Estrutura proposta
+## Estrutura do código
 
 ```text
 subprojetos/tic_tim_demografia_habitacao/
@@ -28,28 +29,51 @@ subprojetos/tic_tim_demografia_habitacao/
 ├── config/
 │   ├── municipios.yml
 │   ├── fontes.yml
+│   ├── paths.yml
 │   └── parametros.yml
 ├── src/tic_tim_demografia/
-│   ├── __init__.py
-│   ├── cli.py
-│   ├── fontes/
-│   ├── harmonizacao/
-│   ├── indicadores/
-│   ├── territorializacao/
-│   ├── espacial/
-│   ├── produtos/
-│   └── qa/
+│   ├── config.py
+│   ├── paths.py
+│   ├── proveniencia.py
+│   ├── etapa00.py
+│   ├── etapa01.py
+│   └── fontes/
 ├── scripts/
 │   └── run_pipeline.py
 ├── tests/
 └── docs/
 ```
 
+Os dados e resultados não são versionados. Por padrão ficam em `data/`; a variável `TIC_TIM_DATA_ROOT` permite direcionar o armazenamento para qualquer diretório ou volume externo. Consulte `docs/ARQUITETURA_DADOS.md`.
+
+## Execução inicial
+
+Instalação em ambiente limpo:
+
+```bash
+cd subprojetos/tic_tim_demografia_habitacao
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+pytest
+python scripts/run_pipeline.py --etapa 00
+python scripts/run_pipeline.py --etapa 01
+```
+
+Para externalizar o armazenamento:
+
+```bash
+export TIC_TIM_DATA_ROOT=/dados/tic_tim_demografia
+python scripts/run_pipeline.py --etapa implementadas
+```
+
+A etapa 01 congela os descritores SIDRA das tabelas 1518 e 3107 e snapshots dos índices públicos do IBGE para agregados setoriais 2022, características urbanísticas do entorno, FCU e CNEFE. Esses snapshots documentam exatamente o catálogo disponível na execução antes que arquivos específicos sejam selecionados e baixados.
+
 ## Etapas do pipeline
 
 ### 00. Configuração e manifesto de execução
 
-Define os 30 municípios, anos censitários, versões das fontes, diretórios, parâmetros estatísticos, percentis e projeções cartográficas.
+Define os 30 municípios, anos censitários, versões das fontes, diretórios, parâmetros estatísticos, percentis e projeções cartográficas. Valida códigos IBGE, coroas e exclusões antes de qualquer aquisição.
 
 ### 01. Aquisição das fontes
 
@@ -63,7 +87,7 @@ Prevê download ou leitura automatizada de:
 - Favelas e Comunidades Urbanas 2022;
 - bases auxiliares do IBGE, quando necessárias à reprodução.
 
-Cada aquisição deve registrar URL, data de obtenção, tamanho, versão/edição identificável e hash do arquivo bruto.
+Cada aquisição deve registrar URL final, data, tamanho e SHA-256. Arquivos em `raw/` não são substituídos silenciosamente.
 
 ### 02. Harmonização longitudinal
 
@@ -114,18 +138,10 @@ Gera automaticamente tabelas de síntese, matrizes municipais, arquivos geoespac
 
 ### 12. QA e reprodutibilidade
 
-Executa testes de:
-
-- unicidade de chaves;
-- coerência de universos e denominadores;
-- percentuais em faixas válidas;
-- cobertura espacial;
-- equivalência de agregações;
-- estabilidade P75/P80;
-- consistência dos produtos finais com valores de referência auditados.
+Executa testes de unicidade de chaves, universos, denominadores, faixas válidas, cobertura espacial, equivalência de agregações, estabilidade P75/P80 e regressão contra valores auditados.
 
 ## Regra de desenvolvimento
 
-O código será construído em etapas pequenas e testáveis. Os valores de referência usados nos testes serão extraídos dos produtos auditados do projeto, mas os dados brutos não serão versionados no GitHub quando forem grandes ou quando a fonte pública permitir reobtenção automatizada.
+O código é construído em etapas pequenas e testáveis. Os valores de referência usados nos testes são extraídos dos produtos auditados do projeto, mas nunca são usados como substitutos das fontes originais. Dados brutos não são versionados quando a fonte pública permite reobtenção automatizada.
 
-A primeira meta operacional é reproduzir, do zero, a base longitudinal municipal e o universo setorial 2022. Em seguida serão reconstruídos ISAU/F2, F3, F1/F4, convergência multidimensional, validação espacial e, por fim, mapas e tabelas.
+A meta operacional seguinte é selecionar, a partir dos snapshots congelados e dos descritores SIDRA, as consultas e arquivos necessários para produzir a primeira base longitudinal municipal 2000–2010–2022 em `processed/municipal/`, com QA automático contra os resultados auditados.
