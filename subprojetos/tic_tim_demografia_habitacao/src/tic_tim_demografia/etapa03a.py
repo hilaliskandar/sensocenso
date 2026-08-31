@@ -4,6 +4,7 @@ import json
 import re
 import unicodedata
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 from .config import carregar_fontes
@@ -50,12 +51,7 @@ def _selecionar_unico(links: list[str], padrao: re.Pattern[str], descricao: str)
 
 
 def _localizar_numero_moradores(classificacoes: list[Classificacao]) -> Classificacao:
-    """Resolve a dimensão de número de moradores sem depender de um código fixo.
-
-    A tabela 185 pode variar na redação do rótulo. Primeiro tenta o nome semântico;
-    se não houver correspondência única, usa a estrutura das categorias: várias
-    classes iniciadas por números, incluindo explicitamente 1 e 2 moradores.
-    """
+    """Resolve a dimensão de número de moradores sem depender de um código fixo."""
     try:
         return localizar_classificacao(
             classificacoes, termos_nome=TERMOS_NUMERO_MORADORES
@@ -81,18 +77,82 @@ def _localizar_numero_moradores(classificacoes: list[Classificacao]) -> Classifi
         return candidatas[0]
 
 
+def _resumo_estrutura_generica(obj: Any, limite: int = 120) -> dict:
+    """Produz diagnóstico estrutural sem inventar semântica.
+
+    A tabela 156 do SIDRA não expõe necessariamente classificações no mesmo
+    formato das demais tabelas. Este resumo permite inspecionar o descritor vivo
+    e evoluir a etapa 03b a partir da estrutura realmente publicada.
+    """
+    itens: list[dict[str, Any]] = []
+
+    def visitar(x: Any, caminho: str = "$", profundidade: int = 0) -> None:
+        if len(itens) >= limite or profundidade > 6:
+            return
+        if isinstance(x, dict):
+            chaves = list(x.keys())
+            itens.append({"caminho": caminho, "tipo": "dict", "chaves": chaves[:30]})
+            for k, v in x.items():
+                if len(itens) >= limite:
+                    break
+                visitar(v, f"{caminho}.{k}", profundidade + 1)
+        elif isinstance(x, list):
+            itens.append({"caminho": caminho, "tipo": "list", "n": len(x)})
+            for i, v in enumerate(x[:20]):
+                visitar(v, f"{caminho}[{i}]", profundidade + 1)
+        elif isinstance(x, (str, int, float, bool)) or x is None:
+            valor = x
+            if isinstance(valor, str) and len(valor) > 300:
+                valor = valor[:300] + "…"
+            itens.append({"caminho": caminho, "tipo": type(x).__name__, "valor": valor})
+
+    visitar(obj)
+    return {"n_itens": len(itens), "itens": itens}
+
+
 def _resolver_tabela_156(descritor_path: Path) -> dict:
-    classificacoes = extrair_classificacoes(carregar_descritor(descritor_path))
-    situacao = localizar_classificacao(classificacoes, termos_nome=TERMOS_SITUACAO)
-    total = localizar_categoria(situacao, nomes_exatos=("Total",))
-    return {
+    descritor = carregar_descritor(descritor_path)
+    classificacoes = extrair_classificacoes(descritor)
+    base = {
         "tabela": 156,
         "papel": (
             "domicílios particulares ocupados/permanentes, moradores no universo "
             "compatível e tamanho médio, conforme variáveis efetivamente expostas pela tabela"
         ),
-        "classificacao_situacao": {"codigo": situacao.codigo, "nome": situacao.nome},
-        "situacao_total": {"codigo": total.codigo, "nome": total.nome},
+        "n_classificacoes_detectadas": len(classificacoes),
+    }
+
+    if not classificacoes:
+        return {
+            **base,
+            "status_resolucao": "DIAGNOSTICO_ESTRUTURAL",
+            "classificacao_situacao": None,
+            "situacao_total": None,
+            "estrutura_descritor": _resumo_estrutura_generica(descritor),
+            "regra": (
+                "o descritor vivo da tabela 156 não expôs classificações no padrão usado "
+                "pelo parser; não presumir situação, variável ou código. A etapa 03b deve "
+                "ser implementada somente após inspeção do descritor bruto/estrutura publicada"
+            ),
+        }
+
+    try:
+        situacao = localizar_classificacao(classificacoes, termos_nome=TERMOS_SITUACAO)
+        total = localizar_categoria(situacao, nomes_exatos=("Total",))
+        situacao_info = {"codigo": situacao.codigo, "nome": situacao.nome}
+        total_info = {"codigo": total.codigo, "nome": total.nome}
+        status = "RESOLVIDA"
+    except ValueError:
+        situacao_info = None
+        total_info = None
+        status = "SEM_SITUACAO_EXPLICITA"
+
+    return {
+        **base,
+        "status_resolucao": status,
+        "classificacao_situacao": situacao_info,
+        "situacao_total": total_info,
+        "estrutura_descritor": _resumo_estrutura_generica(descritor),
         "regra": (
             "não fixar código de variável nesta etapa; a etapa 03b deverá resolver e "
             "validar as variáveis retornadas antes de calcular DPO ou tamanho médio"
@@ -113,6 +173,7 @@ def _resolver_tabela_185(descritor_path: Path) -> dict:
     )
     return {
         "tabela": 185,
+        "status_resolucao": "RESOLVIDA",
         "papel": "distribuição dos domicílios por número de moradores e identificação de unipessoais",
         "classificacao_situacao": {"codigo": situacao.codigo, "nome": situacao.nome},
         "situacao_total": {"codigo": total.codigo, "nome": total.nome},
@@ -191,7 +252,7 @@ def executar(raiz: Path) -> None:
             },
         },
         "bloqueios_para_03b": [
-            "resolver as variáveis/medidas da tabela 156 sem presumir código",
+            "resolver as variáveis/medidas da tabela 156 a partir do descritor bruto vivo",
             "resolver o denominador histórico da participação de unipessoais na tabela 185",
             "resolver no dicionário 2022 V00017–V00026 e seu universo compatível",
             "confirmar a fonte exata do tamanho médio domiciliar 2022 antes de reproduzi-lo",
@@ -210,7 +271,10 @@ def executar(raiz: Path) -> None:
             "tipo": "etapa",
             "etapa": "03a",
             "status": "OK",
-            "descricao": "fontes e dimensões de domicílios resolvidas sem iniciar cálculos ambíguos",
+            "descricao": (
+                "fontes domiciliares inspecionadas; tabela 185 resolvida e tabela 156 "
+                "mantida em diagnóstico estrutural quando não expõe classificações padrão"
+            ),
             "saida": str(destino.relative_to(paths.data_root)),
         },
     )
