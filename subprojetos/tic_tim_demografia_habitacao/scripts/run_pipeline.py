@@ -20,7 +20,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from tic_tim_demografia import etapa00, etapa01, etapa02  # noqa: E402
+from tic_tim_demografia import etapa00, etapa01, etapa02, etapa02b  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ ETAPAS = [
     Etapa("00", "configuração, universo e QA inicial", etapa00.executar),
     Etapa("01", "aquisição e congelamento inicial das fontes", etapa01.executar),
     Etapa("02a", "gate semântico SIDRA para harmonização longitudinal", etapa02.executar),
-    Etapa("02b", "coleta e harmonização longitudinal 2000–2010", ainda_nao_implementada("coleta e harmonização longitudinal 2000–2010"), False),
+    Etapa("02b", "coleta e harmonização longitudinal 2000–2010", etapa02b.executar),
     Etapa("03", "indicadores domiciliares", ainda_nao_implementada("indicadores domiciliares"), False),
     Etapa("04", "CWR", ainda_nao_implementada("CWR"), False),
     Etapa("05", "ISAU e privação", ainda_nao_implementada("ISAU e privação"), False),
