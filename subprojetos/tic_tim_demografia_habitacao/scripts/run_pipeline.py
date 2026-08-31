@@ -14,30 +14,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from tic_tim_demografia import (  # noqa: E402
-    etapa00,
-    etapa01,
-    etapa02,
-    etapa02b,
-    etapa02c,
-    etapa03a,
-    etapa03b,
-    etapa03c,
-    etapa04,
-    etapa05a,
-    etapa05b,
-    etapa05c,
-    etapa05d,
-    etapa05e,
-    etapa06a,
+    etapa00, etapa01, etapa02, etapa02b, etapa02c, etapa03a, etapa03b, etapa03c,
+    etapa04, etapa05a, etapa05b, etapa05c, etapa05d, etapa05e, etapa06a, etapa06b,
 )
-
 
 @dataclass(frozen=True)
 class Etapa:
@@ -46,16 +31,12 @@ class Etapa:
     funcao: Callable[[Path], None]
     implementada: bool = True
 
-
 def ainda_nao_implementada(nome: str) -> Callable[[Path], None]:
     def executar(_raiz: Path) -> None:
         raise NotImplementedError(
-            f"Etapa '{nome}' ainda não implementada. "
-            "A implementação deve reproduzir o caderno metodológico e passar pelos testes de regressão."
+            f"Etapa '{nome}' ainda não implementada. A implementação deve reproduzir o caderno metodológico e passar pelos testes de regressão."
         )
-
     return executar
-
 
 ETAPAS = [
     Etapa("00", "configuração, universo e QA inicial", etapa00.executar),
@@ -73,7 +54,7 @@ ETAPAS = [
     Etapa("05d", "estrutura dimensional do ISAU corrigido", etapa05d.executar),
     Etapa("05e", "ponderação por exposição e priorização do ISAU corrigido", etapa05e.executar),
     Etapa("06a", "gate semântico dos atributos do entorno urbano", etapa06a.executar),
-    Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano"), False),
+    Etapa("06b", "atributos setoriais do entorno e F3", etapa06b.executar),
     Etapa("07", "famílias analíticas", ainda_nao_implementada("famílias analíticas"), False),
     Etapa("08", "sensibilidade P75/P80", ainda_nao_implementada("sensibilidade P75/P80"), False),
     Etapa("09", "validação espacial", ainda_nao_implementada("validação espacial"), False),
@@ -82,35 +63,25 @@ ETAPAS = [
     Etapa("12", "QA final", ainda_nao_implementada("QA final"), False),
 ]
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raiz", type=Path, default=ROOT)
-    parser.add_argument(
-        "--etapa",
-        choices=[e.codigo for e in ETAPAS] + ["implementadas", "todas"],
-        default="implementadas",
-    )
+    parser.add_argument("--etapa", choices=[e.codigo for e in ETAPAS] + ["implementadas", "todas"], default="implementadas")
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
-
     if args.listar:
         for etapa in ETAPAS:
-            status = "OK" if etapa.implementada else "PENDENTE"
-            print(f"{etapa.codigo}: {etapa.nome} [{status}]")
+            print(f"{etapa.codigo}: {etapa.nome} [{'OK' if etapa.implementada else 'PENDENTE'}]")
         return
-
     if args.etapa == "implementadas":
         selecionadas = [e for e in ETAPAS if e.implementada]
     elif args.etapa == "todas":
         selecionadas = ETAPAS
     else:
         selecionadas = [e for e in ETAPAS if e.codigo == args.etapa]
-
     for etapa in selecionadas:
         print(f"[{etapa.codigo}] {etapa.nome}")
         etapa.funcao(args.raiz)
-
 
 if __name__ == "__main__":
     main()
