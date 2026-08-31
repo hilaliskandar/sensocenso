@@ -93,7 +93,11 @@ def _coluna(df: pd.DataFrame, *alternativas: str) -> str:
 
 def _converter_preservando_sigilo(serie: pd.Series, nome: str) -> pd.Series:
     bruto = serie.astype("string").str.strip()
-    num = pd.to_numeric(bruto, errors="coerce")
+    # Os agregados 2022 do IBGE usam vírgula decimal em variáveis de média,
+    # enquanto contagens permanecem inteiras. A normalização é feita somente
+    # para a conversão numérica; o valor bruto segue intacto para o diagnóstico.
+    normalizado = bruto.str.replace(",", ".", regex=False)
+    num = pd.to_numeric(normalizado, errors="coerce")
     mask = num.isna() & bruto.notna()
     inesperados = sorted(
         {
