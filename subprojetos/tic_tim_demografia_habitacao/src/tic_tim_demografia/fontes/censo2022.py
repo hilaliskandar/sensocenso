@@ -11,17 +11,25 @@ import pandas as pd
 COLUNAS_DEMOGRAFIA = ["V01006"] + [f"V010{i:02d}" for i in range(31, 42)]
 
 
-def localizar_csv_demografia_no_zip(path: Path) -> str:
+def _localizar_csv_no_zip(path: Path, token: str) -> str:
     with zipfile.ZipFile(path) as zf:
         candidatos = [
             n for n in zf.namelist()
-            if n.lower().endswith(".csv") and "demografia" in n.lower()
+            if n.lower().endswith(".csv") and token.casefold() in n.casefold()
         ]
     if len(candidatos) != 1:
         raise ValueError(
-            f"ZIP demografia 2022 deve conter exatamente um CSV de demografia; candidatos={candidatos}"
+            f"ZIP deve conter exatamente um CSV compatível com '{token}'; candidatos={candidatos}"
         )
     return candidatos[0]
+
+
+def localizar_csv_demografia_no_zip(path: Path) -> str:
+    return _localizar_csv_no_zip(path, "demografia")
+
+
+def localizar_csv_basico_no_zip(path: Path) -> str:
+    return _localizar_csv_no_zip(path, "basico")
 
 
 def _detectar_separador(amostra: bytes) -> str:
@@ -30,23 +38,63 @@ def _detectar_separador(amostra: bytes) -> str:
     contagens = {";": primeira.count(";"), ",": primeira.count(","), "\t": primeira.count("\t")}
     separador, n = max(contagens.items(), key=lambda x: x[1])
     if n == 0:
-        raise ValueError("Não foi possível detectar separador do CSV demografia 2022.")
+        raise ValueError("Não foi possível detectar separador do CSV do Censo 2022.")
     return separador
 
 
-def ler_demografia_setorial_zip(path: Path, *, codigos_municipais: Iterable[str]) -> pd.DataFrame:
-    """Lê somente os setores pertencentes ao universo configurado.
+def _ler_membro_csv(path: Path, membro: str) -> pd.DataFrame:
+    with zipfile.ZipFile(path) as zf:
+        with zf.open(membro) as f:
+            bruto = f.read()
+    sep = _detectar_separador(bruto[:65536])
+    return pd.read_csv(io.BytesIO(bruto), sep=sep, dtype="string", encoding="utf-8-sig")
+
+
+def ler_setores_urbanos_basico_zip(path: Path, *, codigos_municipais: Iterable[str]) -> pd.DataFrame:
+    """Lê do arquivo Básico a classificação oficial urbana/rural dos setores.
+
+    No Censo 2022, `SITUACAO=Urbana` reúne as situações detalhadas 1, 2 e 3.
+    O recorte é explícito porque o painel analítico TIC–TIM de 2022 trabalha com
+    o universo setorial urbano, não com a soma indiscriminada de setores rurais.
+    """
+    codigos = {str(c) for c in codigos_municipais}
+    df = _ler_membro_csv(path, localizar_csv_basico_no_zip(path))
+    mapa = {str(c).strip().casefold(): str(c) for c in df.columns}
+    coluna_setor = mapa.get("cd_setor")
+    coluna_situacao = mapa.get("situacao")
+    if coluna_setor is None or coluna_situacao is None:
+        raise ValueError("Arquivo Básico 2022 sem CD_SETOR e/ou SITUACAO.")
+
+    work = df[[coluna_setor, coluna_situacao]].copy()
+    work["codigo_ibge"] = work[coluna_setor].astype("string").str.slice(0, 7)
+    work["situacao_norm"] = work[coluna_situacao].astype("string").str.strip().str.casefold()
+    work = work.loc[work["codigo_ibge"].isin(codigos)]
+    observadas = sorted(work["situacao_norm"].dropna().unique().tolist())
+    inesperadas = [x for x in observadas if x not in {"urbana", "rural"}]
+    if inesperadas:
+        raise ValueError(f"Categorias SITUACAO inesperadas no Básico 2022: {inesperadas}")
+
+    urbanos = work.loc[work["situacao_norm"].eq("urbana"), [coluna_setor, "codigo_ibge"]].copy()
+    if urbanos.empty:
+        raise ValueError("Nenhum setor urbano encontrado para os municípios configurados.")
+    if urbanos[coluna_setor].duplicated().any():
+        raise ValueError("CD_SETOR duplicado no arquivo Básico 2022.")
+    return urbanos.rename(columns={coluna_setor: "codigo_setor"}).reset_index(drop=True)
+
+
+def ler_demografia_setorial_zip(
+    path: Path,
+    *,
+    codigos_municipais: Iterable[str],
+    setores_permitidos: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Lê somente os setores pertencentes ao universo configurado e, se informado, ao recorte espacial.
 
     O código municipal é obtido dos sete primeiros dígitos de CD_SETOR. Valores
     especiais permanecem ausentes: a rotina não os converte em zero.
     """
     codigos = {str(c) for c in codigos_municipais}
-    membro = localizar_csv_demografia_no_zip(path)
-    with zipfile.ZipFile(path) as zf:
-        with zf.open(membro) as f:
-            bruto = f.read()
-    sep = _detectar_separador(bruto[:65536])
-    df = pd.read_csv(io.BytesIO(bruto), sep=sep, dtype="string", encoding="utf-8-sig")
+    df = _ler_membro_csv(path, localizar_csv_demografia_no_zip(path))
 
     coluna_setor = next((c for c in df.columns if str(c).strip().casefold() == "cd_setor"), None)
     if coluna_setor is None:
@@ -56,9 +104,15 @@ def ler_demografia_setorial_zip(path: Path, *, codigos_municipais: Iterable[str]
         raise ValueError(f"Variáveis demográficas 2022 obrigatórias ausentes: {faltantes}")
 
     df["codigo_ibge"] = df[coluna_setor].astype("string").str.slice(0, 7)
-    recorte = df.loc[df["codigo_ibge"].isin(codigos), [coluna_setor, "codigo_ibge"] + COLUNAS_DEMOGRAFIA].copy()
+    mask = df["codigo_ibge"].isin(codigos)
+    if setores_permitidos is not None:
+        permitidos = {str(x) for x in setores_permitidos}
+        mask &= df[coluna_setor].astype("string").isin(permitidos)
+    recorte = df.loc[mask, [coluna_setor, "codigo_ibge"] + COLUNAS_DEMOGRAFIA].copy()
     if recorte.empty:
-        raise ValueError("Nenhum setor dos municípios configurados foi encontrado no arquivo 2022.")
+        raise ValueError("Nenhum setor do universo configurado foi encontrado no arquivo 2022.")
+    if recorte[coluna_setor].duplicated().any():
+        raise ValueError("CD_SETOR duplicado no arquivo demografia 2022.")
     return recorte.rename(columns={coluna_setor: "codigo_setor"})
 
 
@@ -80,12 +134,7 @@ def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
             )
         work[coluna] = num
 
-    # Se um setor possuir ausência em qualquer componente necessário, o município
-    # não pode ser fechado por soma silenciosa com skipna. O groupby(min_count=1)
-    # preserva ausências, e a checagem de cobertura abaixo bloqueia o fechamento.
     colunas_soma = COLUNAS_DEMOGRAFIA
-    por_municipio = work.groupby("codigo_ibge", as_index=False)[colunas_soma].sum(min_count=1)
-
     faltas_setoriais = work.groupby("codigo_ibge")[colunas_soma].apply(lambda x: x.isna().any().any())
     ruins = faltas_setoriais[faltas_setoriais].index.astype(str).tolist()
     if ruins:
@@ -93,6 +142,7 @@ def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
             "Há valores ausentes nas variáveis necessárias em setores dos municípios: " + ", ".join(ruins)
         )
 
+    por_municipio = work.groupby("codigo_ibge", as_index=False)[colunas_soma].sum(min_count=1)
     por_municipio["ano"] = 2022
     por_municipio["pop_0_14"] = por_municipio[["V01031", "V01032", "V01033"]].sum(axis=1)
     por_municipio["pop_15_59"] = por_municipio[
