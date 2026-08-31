@@ -10,7 +10,7 @@ from .fontes.sidra_descritor import (
     localizar_categoria,
     localizar_classificacao,
 )
-from .harmonizacao.idade import mapear_rotulos_para_bandas
+from .harmonizacao.idade import selecionar_particao_quinquenal
 from .paths import resolve_paths
 from .proveniencia import registrar_evento
 
@@ -28,9 +28,6 @@ def _resolver_tabela(descritor_path: Path, tabela: int, periodo: int) -> dict:
     sexo = localizar_classificacao(classificacoes, termos_nome=TERMOS_SEXO)
     sexo_total = localizar_categoria(sexo, nomes_exatos=("Total",))
 
-    # Situação do domicílio é obrigatória quando presente. Algumas tabelas podem
-    # estruturar o universo de outra forma; nesse caso a ausência fica explícita
-    # no artefato de resolução, em vez de receber código inventado.
     situacao = None
     situacao_total = None
     try:
@@ -39,7 +36,11 @@ def _resolver_tabela(descritor_path: Path, tabela: int, periodo: int) -> dict:
     except ValueError:
         pass
 
-    mapa_idade = mapear_rotulos_para_bandas([c.nome for c in idade.categorias])
+    # Os descritores oferecem simultaneamente classes agregadas e idades simples.
+    # A série histórica auditada usa 21 classes mutuamente exclusivas: quinquênios
+    # 0–4 ... 95–99 e 100+. Selecionar todas as categorias que cabem em uma banda
+    # causaria dupla contagem; por isso a partição é validada antes da consulta.
+    mapa_idade = selecionar_particao_quinquenal([c.nome for c in idade.categorias])
     codigos_por_banda = {"0_14": [], "15_59": [], "60_mais": []}
     ignoradas = []
     for cat in idade.categorias:
@@ -54,6 +55,9 @@ def _resolver_tabela(descritor_path: Path, tabela: int, periodo: int) -> dict:
         raise ValueError(
             f"Tabela {tabela}: bandas harmonizadas sem categorias detectadas: {faltantes}"
         )
+    n_classes = sum(len(v) for v in codigos_por_banda.values())
+    if n_classes != 21:
+        raise AssertionError(f"Tabela {tabela}: esperadas 21 classes etárias não sobrepostas; obtidas={n_classes}")
 
     return {
         "tabela": tabela,
@@ -69,7 +73,11 @@ def _resolver_tabela(descritor_path: Path, tabela: int, periodo: int) -> dict:
         else {"codigo": situacao_total.codigo, "nome": situacao_total.nome},
         "categorias_idade_por_banda": codigos_por_banda,
         "categorias_idade_nao_utilizadas": ignoradas,
-        "regra": "somar apenas categorias inteiramente contidas em 0–14, 15–59 e 60+; não interpolar",
+        "n_classes_idade_selecionadas": n_classes,
+        "regra": (
+            "usar partição não sobreposta de 21 classes: quinquênios 0–4 a 95–99 e 100+; "
+            "agregar em 0–14, 15–59 e 60+; não interpolar"
+        ),
     }
 
 
@@ -101,7 +109,10 @@ def executar(raiz: Path) -> None:
             "tipo": "etapa",
             "etapa": "02a",
             "status": "OK",
-            "descricao": "classificações SIDRA resolvidas por rótulo; bandas etárias validadas sem interpolação",
+            "descricao": (
+                "classificações SIDRA resolvidas por rótulo; partição etária de 21 classes "
+                "mutuamente exclusivas validada antes da harmonização"
+            ),
             "saida": str(destino.relative_to(paths.data_root)),
         },
     )
