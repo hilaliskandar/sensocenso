@@ -15,24 +15,17 @@ from .proveniencia import registrar_arquivo, registrar_evento
 
 VAR_ENTORNO_RE = re.compile(r"\bV0(?:50|52|54)\d{2}\b", re.I)
 UNIVERSO_POR_PREFIXO = {"V050": "domicilios", "V052": "moradores", "V054": "faces"}
-
-ATRIBUTOS = {
-    "bueiro_boca_de_lobo": ("bueiro", "boca de lobo", "boca-de-lobo"),
-    "calcada": ("calcada",),
-    "pavimentacao": ("pavimentacao", "pavimentada", "pavimentado"),
-    "iluminacao_publica": ("iluminacao publica", "iluminacao"),
-    "arborizacao": ("arborizacao", "arborizada", "arborizado"),
-    "rampa_cadeirante": ("rampa para cadeirante", "rampa"),
-    "obstaculo_calcada": ("obstaculo na calcada", "obstaculos na calcada", "obstaculo"),
-    "ponto_onibus": ("ponto de onibus", "parada de onibus"),
-    "infraestrutura_cicloviaria": (
-        "via sinalizada para bicicleta",
-        "via sinalizada para bicicletas",
-        "bicicleta",
-        "ciclovia",
-        "ciclofaixa",
-    ),
-}
+ATRIBUTOS = (
+    "bueiro_boca_de_lobo",
+    "calcada",
+    "pavimentacao",
+    "iluminacao_publica",
+    "arborizacao",
+    "rampa_cadeirante",
+    "obstaculo_calcada",
+    "ponto_onibus",
+    "infraestrutura_cicloviaria",
+)
 
 
 def _normalizar(valor: object) -> str:
@@ -49,7 +42,38 @@ def _texto_original(valores: list[object]) -> str:
     )
 
 
-def _categoria(texto_norm: str) -> str | None:
+def _atributos_da_linha(norm: str) -> list[str]:
+    out: list[str] = []
+    if "bueiro" in norm or "boca de lobo" in norm or "boca-de-lobo" in norm:
+        out.append("bueiro_boca_de_lobo")
+    if "calcada" in norm and "obstaculo" not in norm:
+        out.append("calcada")
+    if "paviment" in norm:
+        out.append("pavimentacao")
+    if "iluminacao publica" in norm:
+        out.append("iluminacao_publica")
+    if "arborizacao" in norm:
+        out.append("arborizacao")
+    if "rampa para cadeirante" in norm:
+        out.append("rampa_cadeirante")
+    if "obstaculo" in norm and "calcada" in norm:
+        out.append("obstaculo_calcada")
+    if "ponto de onibus" in norm or "ponto de onibus / van" in norm or "parada de onibus" in norm:
+        out.append("ponto_onibus")
+    if "via sinalizada para bicicleta" in norm or "via sinalizada para bicicletas" in norm:
+        out.append("infraestrutura_cicloviaria")
+    return out
+
+
+def _categoria(texto_norm: str, atributo: str) -> str | None:
+    if atributo == "arborizacao":
+        if "saltado" in texto_norm:
+            return "nao_declarado"
+        if "sem arvores" in texto_norm:
+            return "nao"
+        if any(x in texto_norm for x in ("de 1 a 2 arvores", "de 3 a 4 arvores", "5 ou mais arvores")):
+            return "sim"
+        return None
     if "nao declarado" in texto_norm or "nao-declarado" in texto_norm:
         return "nao_declarado"
     if re.search(r"(?:^|\W)nao(?:\W|$)", texto_norm) or "sem " in texto_norm:
@@ -66,20 +90,14 @@ def _inspecionar_workbook(wb, origem: str) -> dict:
         for i, valores in enumerate(linhas):
             original = _texto_original(valores)
             norm = _normalizar(original)
-            atributos = [
-                nome
-                for nome, termos in ATRIBUTOS.items()
-                if any(_normalizar(termo) in norm for termo in termos)
-            ]
+            atributos = _atributos_da_linha(norm)
             if not atributos:
                 continue
-
             contexto_linhas = linhas[max(0, i - 1) : min(len(linhas), i + 2)]
             contexto = " || ".join(_texto_original(v) for v in contexto_linhas)
             codigos = sorted(set(VAR_ENTORNO_RE.findall(original.upper())))
             if not codigos:
                 codigos = sorted(set(VAR_ENTORNO_RE.findall(contexto.upper())))
-            categoria = _categoria(norm)
             for atributo in atributos:
                 achados[atributo].append(
                     {
@@ -88,7 +106,7 @@ def _inspecionar_workbook(wb, origem: str) -> dict:
                         "linha": i + 1,
                         "texto": original,
                         "contexto": contexto if contexto != original else None,
-                        "categoria": categoria,
+                        "categoria": _categoria(norm, atributo),
                         "codigos": codigos,
                     }
                 )
@@ -143,6 +161,26 @@ def resumir_codigos(achados: dict[str, list[dict]]) -> dict:
     return resumo
 
 
+def _resolver(resumo: dict, cabecalhos: dict[str, set[str]]) -> dict:
+    resolvido: dict[str, dict] = {}
+    for atributo, universos in resumo.items():
+        resolvido[atributo] = {}
+        for universo, cats in universos.items():
+            sim = list(cats.get("sim", []))
+            nao = list(cats.get("nao", []))
+            nd = list(cats.get("nao_declarado", []))
+            sem = list(cats.get("sem_categoria", []))
+            todos = sim + nao + nd
+            valido = bool(sim and nao and not sem and all(c in cabecalhos[universo] for c in todos))
+            resolvido[atributo][universo] = {
+                "sim": sim,
+                "nao": nao,
+                "nao_declarado": nd,
+                "confirmados_no_cabecalho": bool(valido),
+            }
+    return resolvido
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     paths = resolve_paths(raiz)
@@ -157,6 +195,14 @@ def executar(raiz: Path) -> None:
     if not nome_resolvedor:
         raise ValueError("05b não registrou dicionário oficial resolvedor de bueiro.")
 
+    cabecalhos: dict[str, set[str]] = {}
+    for universo in ("domicilios", "moradores", "faces"):
+        cabecalhos[universo] = {
+            c
+            for info in qa05b["inspecao_entorno"][universo]["csvs"]
+            for c in info["colunas"]
+        }
+
     raw_doc = paths.raw / "ibge" / "censo2022" / "isau" / "documentacao"
     candidatos = sorted(list(raw_doc.glob("*.xlsx")) + list(raw_doc.glob("*.zip")))
     if not candidatos:
@@ -165,56 +211,60 @@ def executar(raiz: Path) -> None:
         )
 
     resultados = []
+    resolucao_final = None
     for arquivo in candidatos:
         try:
             achados = inspecionar_dicionario(arquivo)
             n_total = sum(len(v) for v in achados.values())
             if n_total:
+                resumo = resumir_codigos(achados)
+                resolucao = _resolver(resumo, cabecalhos)
                 resultados.append(
                     {
                         "arquivo": arquivo.name,
                         "n_achados": n_total,
                         "achados": achados,
-                        "resumo_codigos": resumir_codigos(achados),
+                        "resumo_codigos": resumo,
+                        "resolucao": resolucao,
                     }
                 )
+                if all(
+                    resolucao[a][u]["confirmados_no_cabecalho"]
+                    for a in ATRIBUTOS
+                    for u in ("domicilios", "moradores", "faces")
+                ):
+                    resolucao_final = resolucao
         except Exception as exc:
-            resultados.append(
-                {"arquivo": arquivo.name, "erro": f"{type(exc).__name__}: {exc}"}
-            )
+            resultados.append({"arquivo": arquivo.name, "erro": f"{type(exc).__name__}: {exc}"})
 
-    if not any("resumo_codigos" in item for item in resultados):
-        raise ValueError("Nenhuma evidência semântica de atributos de entorno encontrada no dicionário oficial.")
+    if resolucao_final is None:
+        status = "DIAGNOSTICO_SEMANTICO_PENDENTE"
+    else:
+        status = "RESOLVIDO_ENTORNO"
 
     qa = {
-        "status": "DIAGNOSTICO_SEMANTICO",
+        "status": status,
         "etapa": "06a",
-        "objetivo": (
-            "descobrir no dicionário oficial os códigos dos atributos de entorno antes de qualquer cálculo"
-        ),
+        "objetivo": "descobrir e confirmar nos cabeçalhos oficiais os códigos dos atributos de entorno",
         "atributos_nucleares_f3": [
-            "bueiro_boca_de_lobo",
-            "calcada",
-            "pavimentacao",
-            "iluminacao_publica",
-            "arborizacao",
+            "bueiro_boca_de_lobo", "calcada", "pavimentacao", "iluminacao_publica", "arborizacao"
         ],
         "atributos_complementares": [
-            "rampa_cadeirante",
-            "obstaculo_calcada",
-            "ponto_onibus",
-            "infraestrutura_cicloviaria",
+            "rampa_cadeirante", "obstaculo_calcada", "ponto_onibus", "infraestrutura_cicloviaria"
         ],
         "dicionario_resolvedor_05b": nome_resolvedor,
         "resultados": resultados,
+        "codigos_resolvidos": resolucao_final,
         "regra": (
-            "06b só poderá calcular percentuais de ausência depois de cada código Sim/Não/Não declarado ser "
-            "semanticamente resolvido e confirmado nos cabeçalhos oficiais dos universos correspondentes."
+            "Percentuais de ausência usam apenas categorias substantivas no denominador. Em variáveis binárias, "
+            "denominador=Sim+Não e Não declarado é excluído. Em arborização, Sem árvores é ausência; as faixas "
+            "1–2, 3–4 e 5+ árvores formam presença; Saltado é excluído do denominador."
         ),
         "regra_f3": (
-            "F3 usa cinco atributos principais desagregados; sinaliza setor com pelo menos dois componentes "
-            "no quartil superior de ausência. Se Q75=0, exige valor estritamente positivo."
+            "F3 usa, no agregado final, os cinco percentuais de ausência segundo moradores; sinaliza pelo menos "
+            "dois componentes no P75 e, quando P75=0, exige valor estritamente positivo."
         ),
+        "proximo_gate": "06b somente se status=RESOLVIDO_ENTORNO",
     }
     destino = paths.qa / "etapa06a_gate_semantico_entorno.json"
     destino.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
