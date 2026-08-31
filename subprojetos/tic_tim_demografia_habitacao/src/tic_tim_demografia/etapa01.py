@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from .config import carregar_fontes
 from .fontes.http import salvar_snapshot_indice
 from .fontes.sidra import baixar_descritor_tabela
+from .fontes.sidra_descritor import carregar_descritor, resumo_descritor
 from .paths import resolve_paths
 from .proveniencia import registrar_evento
 
@@ -29,12 +31,25 @@ def executar(raiz: Path) -> None:
     # 01a — congela os descritores SIDRA antes de resolver classificações e consultas.
     destino_sidra = paths.raw / "ibge" / "sidra" / "descritores"
     destino_sidra.mkdir(parents=True, exist_ok=True)
+    destino_qa_sidra = paths.qa / "sidra_descritores"
+    destino_qa_sidra.mkdir(parents=True, exist_ok=True)
+
     for chave in ("sidra_2000_idade", "sidra_2010_idade"):
         tabela = int(fontes["fontes"][chave]["tabela"])
         destino = destino_sidra / f"descritor_tabela_{tabela}.json"
         if not destino.exists():
             baixar_descritor_tabela(tabela, destino, manifesto=manifesto)
         saidas.append(str(destino.relative_to(paths.data_root)))
+
+        # 01a.1 — produz um resumo legível e versionável apenas em outputs/qa.
+        # Nenhum código de classificação é inferido silenciosamente: a etapa
+        # seguinte deve validar os rótulos detectados antes de consultar valores.
+        resumo = resumo_descritor(carregar_descritor(destino))
+        resumo_path = destino_qa_sidra / f"descritor_tabela_{tabela}_resumo.json"
+        resumo_path.write_text(
+            json.dumps(resumo, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        saidas.append(str(resumo_path.relative_to(paths.data_root)))
 
     # 01b — congela os índices públicos do IBGE. O snapshot permite saber quais
     # arquivos estavam publicados no momento da execução, sem depender de Drive
@@ -55,7 +70,10 @@ def executar(raiz: Path) -> None:
             "tipo": "etapa",
             "etapa": "01",
             "status": "OK",
-            "descricao": "descritores SIDRA e snapshots dos índices públicos IBGE congelados",
+            "descricao": (
+                "descritores SIDRA, resumos estruturais e snapshots dos índices "
+                "públicos IBGE congelados"
+            ),
             "saidas_relativas_data_root": saidas,
         },
     )
