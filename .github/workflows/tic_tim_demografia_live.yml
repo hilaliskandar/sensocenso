@@ -1,5 +1,7 @@
 name: TIC-TIM demografia live
 
+# Execucao viva deliberadamente separada do CI offline. O push neste arquivo
+# serve tambem para repetir o teste integral apos ajustes na camada de rede.
 on:
   workflow_dispatch:
   push:
