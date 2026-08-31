@@ -10,6 +10,7 @@ import pandas as pd
 from .config import carregar_municipios
 from .fontes.censo2022 import (
     agregar_demografia_2022_municipio,
+    diagnosticar_simbolos_demografia,
     ler_demografia_setorial_zip,
     ler_setores_urbanos_basico_zip,
 )
@@ -87,12 +88,41 @@ def executar(raiz: Path) -> None:
         setores_permitidos=urbanos["codigo_setor"],
     )
 
-    # Todo setor urbano com dados demográficos deve pertencer ao recorte; setores
-    # urbanos sem linha demográfica podem ser setores sem moradores e ficam
-    # documentados no QA, não convertidos em observação zero.
     set_urbanos = set(urbanos["codigo_setor"].astype(str))
     set_demografia = set(setores["codigo_setor"].astype(str))
     urbanos_sem_demografia = sorted(set_urbanos - set_demografia)
+
+    # O arquivo setorial definitivo aplica tratamento de sigilo. Antes de qualquer
+    # agregação, registrar a incidência de x/X para permitir decisão metodológica
+    # transparente. Valores omitidos não são inferidos nem convertidos em zero.
+    diagnostico_sigilo = diagnosticar_simbolos_demografia(setores)
+    diagnostico_sigilo.update(
+        {
+            "url_basico": url_basico,
+            "url_demografia": url_demografia,
+            "setores_urbanos_basico_no_universo": int(len(urbanos)),
+            "setores_urbanos_com_demografia": int(len(setores)),
+            "setores_urbanos_sem_linha_demografia": int(len(urbanos_sem_demografia)),
+        }
+    )
+    diag_path = paths.qa / "etapa02c_sigilo_demografia_2022.json"
+    diag_path.write_text(json.dumps(diagnostico_sigilo, ensure_ascii=False, indent=2), encoding="utf-8")
+    registrar_evento(
+        manifesto,
+        {
+            "tipo": "diagnostico",
+            "etapa": "02c",
+            "descricao": "incidência de símbolos de sigilo nos agregados setoriais de demografia 2022",
+            "saida": str(diag_path.relative_to(paths.data_root)),
+            "setores_com_algum_simbolo": diagnostico_sigilo["setores_com_algum_simbolo"],
+            "n_municipios_com_algum_simbolo": diagnostico_sigilo["n_municipios_com_algum_simbolo"],
+        },
+    )
+    if diagnostico_sigilo["setores_com_algum_simbolo"]:
+        raise RuntimeError(
+            "Agregados setoriais 2022 contêm células omitidas por sigilo. "
+            f"Diagnóstico gravado em {diag_path}. A etapa não reconstruirá valores protegidos por inferência."
+        )
 
     base2022 = agregar_demografia_2022_municipio(setores)
     observados = set(base2022["codigo_ibge"].astype(str))
@@ -162,8 +192,5 @@ def executar(raiz: Path) -> None:
     }
     qa_path = paths.qa / "etapa02c_harmonizacao_2022_urbano.json"
     qa_path.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
-    registrar_evento(
-        manifesto,
-        {"tipo": "etapa", "etapa": "02c", **qa},
-    )
+    registrar_evento(manifesto, {"tipo": "etapa", "etapa": "02c", **qa})
     print(json.dumps(qa, ensure_ascii=False, indent=2))
