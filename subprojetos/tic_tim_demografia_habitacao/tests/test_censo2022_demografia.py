@@ -56,6 +56,8 @@ def test_recorta_por_codigo_municipal_e_agrega_bandas(tmp_path):
     assert mun["pop_total_harmonizada"] == 231
     assert mun["pop_total_fonte"] == 231
     assert mun["diferenca_fechamento"] == 0
+    assert mun["setores_idade_completa"] == 2
+    assert mun["setores_idade_incompleta"] == 0
 
 
 def test_basico_define_recorte_urbano_e_exclui_rural(tmp_path):
@@ -98,20 +100,46 @@ def test_basico_aceita_publicacao_cp1252(tmp_path):
     assert urbanos["codigo_setor"].tolist() == ["350160805000001"]
 
 
-def test_valor_especial_bloqueia_agregacao(tmp_path):
+def test_sigilo_exclui_apenas_setor_incompleto_sem_imputar(tmp_path):
+    completo = _linha("350160805000001", {"V01031": 10, "V01040": 5})
+    protegido = _linha("350160805000002", {"V01031": 99, "V01040": 30})
+    protegido["V01034"] = "X"
+    protegido["V01006"] = "X"
+    path = _zip_csv(tmp_path, [completo, protegido])
+    setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
+    mun = agregar_demografia_2022_municipio(setores).iloc[0]
+
+    assert mun["pop_total_harmonizada"] == 15
+    assert mun["setores_demografia"] == 2
+    assert mun["setores_idade_completa"] == 1
+    assert mun["setores_idade_incompleta"] == 1
+    assert mun["cobertura_setorial_idade"] == 0.5
+
+
+def test_v01006_protegido_nao_elimina_setor_com_idades_completas(tmp_path):
+    linha = _linha("350160805000001", {"V01031": 10, "V01040": 5})
+    linha["V01006"] = "X"
+    path = _zip_csv(tmp_path, [linha])
+    setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
+    mun = agregar_demografia_2022_municipio(setores).iloc[0]
+    assert mun["pop_total_harmonizada"] == 15
+    assert mun["setores_idade_completa"] == 1
+
+
+def test_simbolo_inesperado_bloqueia_agregacao(tmp_path):
     linha = _linha("350160805000001", {"V01031": 10})
     linha["V01031"] = ".."
     linha["V01006"] = "10"
     path = _zip_csv(tmp_path, [linha])
     setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
-    with pytest.raises(ValueError, match="não numéricos"):
+    with pytest.raises(ValueError, match="não numéricos inesperados"):
         agregar_demografia_2022_municipio(setores)
 
 
-def test_fechamento_interno_bloqueia_divergencia(tmp_path):
+def test_fechamento_setorial_bloqueia_divergencia_quando_comparavel(tmp_path):
     linha = _linha("350160805000001", {"V01031": 10, "V01040": 5})
     linha["V01006"] = "16"
     path = _zip_csv(tmp_path, [linha])
     setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
-    with pytest.raises(AssertionError, match="não fecham"):
+    with pytest.raises(AssertionError, match="não fecham com V01006"):
         agregar_demografia_2022_municipio(setores)
