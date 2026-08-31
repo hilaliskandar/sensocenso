@@ -92,9 +92,11 @@ def executar(raiz: Path) -> None:
     set_demografia = set(setores["codigo_setor"].astype(str))
     urbanos_sem_demografia = sorted(set_urbanos - set_demografia)
 
-    # O arquivo setorial definitivo aplica tratamento de sigilo. Antes de qualquer
-    # agregação, registrar a incidência de x/X para permitir decisão metodológica
-    # transparente. Valores omitidos não são inferidos nem convertidos em zero.
+    # O arquivo setorial aplica sigilo em células de baixa frequência. O diagnóstico
+    # é sempre preservado, mas a presença de x/X não invalida o processamento:
+    # os indicadores etários são agregados somente no universo de setores em que
+    # V01031–V01041 estão integralmente divulgadas, reproduzindo a regra usada nos
+    # produtos auditados do projeto. Não há imputação, zero artificial ou inferência.
     diagnostico_sigilo = diagnosticar_simbolos_demografia(setores)
     diagnostico_sigilo.update(
         {
@@ -103,6 +105,10 @@ def executar(raiz: Path) -> None:
             "setores_urbanos_basico_no_universo": int(len(urbanos)),
             "setores_urbanos_com_demografia": int(len(setores)),
             "setores_urbanos_sem_linha_demografia": int(len(urbanos_sem_demografia)),
+            "tratamento_analitico": (
+                "complete-case por indicador: para as bandas etárias, usar apenas setores "
+                "com V01031–V01041 simultaneamente divulgadas; x/X permanece ausente"
+            ),
         }
     )
     diag_path = paths.qa / "etapa02c_sigilo_demografia_2022.json"
@@ -112,17 +118,12 @@ def executar(raiz: Path) -> None:
         {
             "tipo": "diagnostico",
             "etapa": "02c",
-            "descricao": "incidência de símbolos de sigilo nos agregados setoriais de demografia 2022",
+            "descricao": "incidência e tratamento de sigilo nos agregados setoriais de demografia 2022",
             "saida": str(diag_path.relative_to(paths.data_root)),
             "setores_com_algum_simbolo": diagnostico_sigilo["setores_com_algum_simbolo"],
             "n_municipios_com_algum_simbolo": diagnostico_sigilo["n_municipios_com_algum_simbolo"],
         },
     )
-    if diagnostico_sigilo["setores_com_algum_simbolo"]:
-        raise RuntimeError(
-            "Agregados setoriais 2022 contêm células omitidas por sigilo. "
-            f"Diagnóstico gravado em {diag_path}. A etapa não reconstruirá valores protegidos por inferência."
-        )
 
     base2022 = agregar_demografia_2022_municipio(setores)
     observados = set(base2022["codigo_ibge"].astype(str))
@@ -170,23 +171,64 @@ def executar(raiz: Path) -> None:
     csv = destino_dir / "base_longitudinal_2000_2010_2022.csv"
     longitudinal.to_parquet(parquet, index=False)
     longitudinal.to_csv(csv, index=False, encoding="utf-8")
-    registrar_arquivo(manifesto, parquet, origem="2000–2010 SIDRA + 2022 agregados setoriais urbanos IBGE")
-    registrar_arquivo(manifesto, csv, origem="2000–2010 SIDRA + 2022 agregados setoriais urbanos IBGE")
+    registrar_arquivo(
+        manifesto,
+        parquet,
+        origem="2000–2010 SIDRA + 2022 agregados setoriais urbanos IBGE, universo etário completo",
+    )
+    registrar_arquivo(
+        manifesto,
+        csv,
+        origem="2000–2010 SIDRA + 2022 agregados setoriais urbanos IBGE, universo etário completo",
+    )
+
+    cobertura = base2022[
+        [
+            "codigo_ibge",
+            "setores_demografia",
+            "setores_idade_completa",
+            "setores_idade_incompleta",
+            "cobertura_setorial_idade",
+        ]
+    ].copy()
+    cobertura["municipio"] = cobertura["codigo_ibge"].map(lambda x: referencia[str(x)][0])
+    cobertura = cobertura[
+        [
+            "codigo_ibge",
+            "municipio",
+            "setores_demografia",
+            "setores_idade_completa",
+            "setores_idade_incompleta",
+            "cobertura_setorial_idade",
+        ]
+    ]
+    cobertura_path = paths.qa / "etapa02c_cobertura_idade_2022.csv"
+    cobertura.to_csv(cobertura_path, index=False, encoding="utf-8")
+    registrar_arquivo(manifesto, cobertura_path, origem="Censo 2022 demografia setorial urbana")
 
     qa = {
         "status": "OK",
         "recorte_2022": "SITUACAO=Urbana no arquivo Básico oficial do Censo 2022",
+        "tratamento_sigilo_2022": (
+            "universo completo por indicador; bandas 0–14, 15–59 e 60+ usam somente "
+            "setores com V01031–V01041 simultaneamente divulgadas; sem imputação"
+        ),
         "municipios": int(longitudinal["codigo_ibge"].nunique()),
         "anos": sorted(int(x) for x in longitudinal["ano"].unique()),
         "linhas_longitudinal": int(len(longitudinal)),
         "setores_urbanos_basico_no_universo": int(len(urbanos)),
         "setores_urbanos_com_demografia": int(len(setores)),
         "setores_urbanos_sem_linha_demografia": int(len(urbanos_sem_demografia)),
+        "setores_idade_completa": int(base2022["setores_idade_completa"].sum()),
+        "setores_idade_incompleta": int(base2022["setores_idade_incompleta"].sum()),
+        "cobertura_setorial_idade_min": float(base2022["cobertura_setorial_idade"].min()),
+        "cobertura_setorial_idade_max": float(base2022["cobertura_setorial_idade"].max()),
         "amostra_setores_urbanos_sem_demografia": urbanos_sem_demografia[:50],
         "diferenca_fechamento_2022_max_abs": int(base2022["diferenca_fechamento"].abs().max()),
         "regressao_oraculo_2022": regressao2022,
         "url_basico": url_basico,
         "url_demografia": url_demografia,
+        "saida_cobertura_csv": str(cobertura_path.relative_to(paths.data_root)),
         "saida_parquet": str(parquet.relative_to(paths.data_root)),
         "saida_csv": str(csv.relative_to(paths.data_root)),
     }
