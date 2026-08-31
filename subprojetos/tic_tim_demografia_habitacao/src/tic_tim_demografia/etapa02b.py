@@ -14,6 +14,7 @@ from .harmonizacao.sidra_valores import (
 )
 from .paths import resolve_paths
 from .proveniencia import registrar_arquivo, registrar_evento
+from .qa.regressao import carregar_oraculo_csv, comparar_com_oraculo
 
 
 def _carregar_selecao(path: Path) -> list[dict]:
@@ -155,6 +156,13 @@ def executar(raiz: Path) -> None:
         longitudinal["pop_60_mais"] / longitudinal["pop_0_14"] * 100.0
     )
 
+    # Gate independente de regressão. O arquivo de sentinelas é pequeno,
+    # versionado e nunca participa dos cálculos; apenas compara resultados.
+    oraculo_path = raiz / "tests/fixtures/oraculo_longitudinal_2000_2010_sentinelas.csv"
+    if not oraculo_path.exists():
+        raise FileNotFoundError(f"Oráculo de regressão versionado ausente: {oraculo_path}")
+    regressao = comparar_com_oraculo(longitudinal, carregar_oraculo_csv(oraculo_path))
+
     destino_dir = paths.processed / "municipal"
     destino_dir.mkdir(parents=True, exist_ok=True)
     parquet = destino_dir / "base_longitudinal_2000_2010.parquet"
@@ -171,6 +179,7 @@ def executar(raiz: Path) -> None:
         "nulos_bandas": int(
             longitudinal[["pop_0_14", "pop_15_59", "pop_60_mais"]].isna().sum().sum()
         ),
+        "regressao_oraculo": regressao,
         "arquivos_brutos": arquivos_brutos,
         "saida_parquet": str(parquet.relative_to(paths.data_root)),
         "saida_csv": str(csv.relative_to(paths.data_root)),
