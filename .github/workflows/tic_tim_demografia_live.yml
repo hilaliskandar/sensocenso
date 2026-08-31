@@ -60,6 +60,8 @@ jobs:
         run: python scripts/run_pipeline.py --etapa 05d
       - name: Executa etapa 05e
         run: python scripts/run_pipeline.py --etapa 05e
+      - name: Executa etapa 06a
+        run: python scripts/run_pipeline.py --etapa 06a
       - name: Lista artefatos
         if: always()
         run: |
