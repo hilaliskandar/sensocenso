@@ -7,6 +7,7 @@ import pytest
 from tic_tim_demografia.fontes.censo2022 import (
     agregar_demografia_2022_municipio,
     ler_demografia_setorial_zip,
+    ler_setores_urbanos_basico_zip,
 )
 
 
@@ -18,11 +19,11 @@ def _linha(setor: str, valores: dict[str, int]) -> dict[str, str]:
     return linha
 
 
-def _zip_csv(tmp_path: Path, linhas: list[dict[str, str]]) -> Path:
+def _zip_csv(tmp_path: Path, linhas: list[dict[str, str]], *, tema: str = "demografia") -> Path:
     csv = pd.DataFrame(linhas).to_csv(index=False, sep=";")
-    path = tmp_path / "demografia.zip"
+    path = tmp_path / f"{tema}.zip"
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("Agregados_por_setores_demografia_BR.csv", csv.encode("utf-8"))
+        zf.writestr(f"Agregados_por_setores_{tema}_BR.csv", csv.encode("utf-8"))
     return path
 
 
@@ -49,6 +50,35 @@ def test_recorta_por_codigo_municipal_e_agrega_bandas(tmp_path):
     assert mun["pop_total_harmonizada"] == 231
     assert mun["pop_total_fonte"] == 231
     assert mun["diferenca_fechamento"] == 0
+
+
+def test_basico_define_recorte_urbano_e_exclui_rural(tmp_path):
+    basico = _zip_csv(
+        tmp_path,
+        [
+            {"CD_SETOR": "350160805000001", "SITUACAO": "Urbana"},
+            {"CD_SETOR": "350160805000002", "SITUACAO": "Rural"},
+            {"CD_SETOR": "355030805000001", "SITUACAO": "Urbana"},
+        ],
+        tema="basico",
+    )
+    urbanos = ler_setores_urbanos_basico_zip(basico, codigos_municipais=["3501608"])
+    assert urbanos["codigo_setor"].tolist() == ["350160805000001"]
+
+    demografia = _zip_csv(
+        tmp_path,
+        [
+            _linha("350160805000001", {"V01031": 10}),
+            _linha("350160805000002", {"V01031": 999}),
+        ],
+    )
+    setores = ler_demografia_setorial_zip(
+        demografia,
+        codigos_municipais=["3501608"],
+        setores_permitidos=urbanos["codigo_setor"],
+    )
+    mun = agregar_demografia_2022_municipio(setores).iloc[0]
+    assert mun["pop_total_fonte"] == 10
 
 
 def test_valor_especial_bloqueia_agregacao(tmp_path):
