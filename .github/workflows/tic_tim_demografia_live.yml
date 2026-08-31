@@ -1,8 +1,8 @@
 name: TIC-TIM demografia live
 
 # Execucao viva deliberadamente separada do CI offline. O push neste arquivo
-# serve tambem para repetir o teste integral apos ajustes na leitura dos
-# formatos efetivamente publicados pelo IBGE.
+# serve tambem para repetir o teste integral e capturar diagnosticos de sigilo
+# antes de qualquer decisao sobre dados omitidos nos agregados setoriais.
 on:
   workflow_dispatch:
   push:
