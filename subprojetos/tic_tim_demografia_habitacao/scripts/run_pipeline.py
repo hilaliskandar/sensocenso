@@ -27,6 +27,7 @@ from tic_tim_demografia import (  # noqa: E402
     etapa02b,
     etapa02c,
     etapa03a,
+    etapa03b,
 )
 
 
@@ -55,7 +56,8 @@ ETAPAS = [
     Etapa("02b", "coleta e harmonização longitudinal 2000–2010", etapa02b.executar),
     Etapa("02c", "agregação urbana 2022 e fechamento longitudinal 30×3", etapa02c.executar),
     Etapa("03a", "gate semântico e descoberta das fontes domiciliares", etapa03a.executar),
-    Etapa("03b", "indicadores domiciliares", ainda_nao_implementada("indicadores domiciliares"), False),
+    Etapa("03b", "base domiciliar histórica 2000–2010", etapa03b.executar),
+    Etapa("03c", "domicílios 2022 e integração temporal", ainda_nao_implementada("domicílios 2022 e integração temporal"), False),
     Etapa("04", "CWR", ainda_nao_implementada("CWR"), False),
     Etapa("05", "ISAU e privação", ainda_nao_implementada("ISAU e privação"), False),
     Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano"), False),
