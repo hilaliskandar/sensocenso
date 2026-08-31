@@ -1,9 +1,7 @@
 name: TIC-TIM demografia live
 
-# Execucao viva deliberadamente separada do CI offline. O push neste arquivo
-# repete o teste integral da regra complete-case por indicador: celulas x/X
-# permanecem ausentes e as bandas etarias usam apenas setores integralmente
-# divulgados, sem imputacao ou reconstrucao de valores protegidos.
+# Execucao viva deliberadamente separada do CI offline. Reconstroi as etapas
+# implementadas diretamente das fontes publicas e publica os artefatos de QA.
 on:
   workflow_dispatch:
   push:
@@ -39,6 +37,8 @@ jobs:
         run: python scripts/run_pipeline.py --etapa 02b
       - name: Executa etapa 02c
         run: python scripts/run_pipeline.py --etapa 02c
+      - name: Executa etapa 03a
+        run: python scripts/run_pipeline.py --etapa 03a
       - name: Lista artefatos
         if: always()
         run: |
