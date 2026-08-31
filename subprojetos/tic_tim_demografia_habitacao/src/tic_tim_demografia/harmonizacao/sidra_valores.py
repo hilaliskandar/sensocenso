@@ -60,15 +60,31 @@ def localizar_coluna(
     return candidatas[0]
 
 
-def resolver_colunas_harmonizacao(df: pd.DataFrame, nome_classificacao_idade: str) -> dict[str, str]:
+def localizar_coluna_opcional(
+    colunas: Iterable[str],
+    *,
+    termos_obrigatorios: Iterable[str],
+    termos_excluir: Iterable[str] = (),
+) -> str | None:
+    try:
+        return localizar_coluna(
+            colunas,
+            termos_obrigatorios=termos_obrigatorios,
+            termos_excluir=termos_excluir,
+        )
+    except ValueError:
+        return None
+
+
+def resolver_colunas_harmonizacao(df: pd.DataFrame, nome_classificacao_idade: str) -> dict[str, str | None]:
     """Resolve semanticamente as colunas necessárias à harmonização.
 
     Não depende de D1C/D2C nem da ordem dos descritores. Usa os rótulos
-    retornados pelo próprio SIDRA e falha se houver ambiguidade.
+    retornados pelo próprio SIDRA e falha se houver ambiguidade nas colunas
+    essenciais. A coluna de variável é opcional porque algumas respostas com
+    apenas uma variável podem omiti-la em formatos específicos.
     """
     idade_base = _norm(nome_classificacao_idade)
-    # Termo distintivo suficientemente estável mesmo quando o descritor usa
-    # singular/plural ou pequenas variações de acentuação.
     termo_idade = "idade" if "idade" in idade_base else idade_base
     return {
         "municipio_codigo": localizar_coluna(
@@ -85,6 +101,9 @@ def resolver_colunas_harmonizacao(df: pd.DataFrame, nome_classificacao_idade: st
         "idade_codigo": localizar_coluna(
             df.columns, termos_obrigatorios=(termo_idade, "codigo")
         ),
+        "variavel_codigo": localizar_coluna_opcional(
+            df.columns, termos_obrigatorios=("variavel", "codigo")
+        ),
         "valor": localizar_coluna(df.columns, termos_obrigatorios=("valor",)),
     }
 
@@ -92,30 +111,45 @@ def resolver_colunas_harmonizacao(df: pd.DataFrame, nome_classificacao_idade: st
 def agregar_bandas_etarias(
     df: pd.DataFrame,
     *,
-    colunas: dict[str, str],
+    colunas: dict[str, str | None],
     codigo_para_banda: dict[str, str],
     ano_esperado: int,
 ) -> pd.DataFrame:
     """Agrega categorias etárias SIDRA nas três bandas canônicas.
 
     Valores especiais/não numéricos provocam erro. A análise histórica não
-    transforma símbolos de supressão/ausência em zero.
+    transforma símbolos de supressão/ausência em zero. Se mais de uma variável
+    for retornada por `allxp`, a etapa também falha para impedir soma entre
+    medidas diferentes.
     """
     work = df.copy()
-    work["codigo_ibge"] = work[colunas["municipio_codigo"]].astype(str)
-    work["municipio"] = work[colunas["municipio_nome"]].astype(str)
-    work["ano"] = pd.to_numeric(work[colunas["periodo_codigo"]], errors="raise").astype(int)
+    obrigatorias = ("municipio_codigo", "municipio_nome", "periodo_codigo", "idade_codigo", "valor")
+    if any(colunas.get(k) is None for k in obrigatorias):
+        raise ValueError("Colunas essenciais da resposta SIDRA não foram resolvidas.")
+
+    variavel_col = colunas.get("variavel_codigo")
+    if variavel_col is not None:
+        variaveis = sorted(work[str(variavel_col)].astype(str).unique().tolist())
+        if len(variaveis) != 1:
+            raise ValueError(
+                "A consulta SIDRA retornou múltiplas variáveis; a harmonização não fará soma implícita: "
+                f"{variaveis}"
+            )
+
+    work["codigo_ibge"] = work[str(colunas["municipio_codigo"])].astype(str)
+    work["municipio"] = work[str(colunas["municipio_nome"])].astype(str)
+    work["ano"] = pd.to_numeric(work[str(colunas["periodo_codigo"])], errors="raise").astype(int)
     observados = set(work["ano"].unique().tolist())
     if observados != {int(ano_esperado)}:
         raise ValueError(f"Período SIDRA inesperado: {sorted(observados)} != {[ano_esperado]}")
 
-    work["codigo_idade"] = work[colunas["idade_codigo"]].astype(str)
+    work["codigo_idade"] = work[str(colunas["idade_codigo"])].astype(str)
     work["banda"] = work["codigo_idade"].map(codigo_para_banda)
     desconhecidas = sorted(work.loc[work["banda"].isna(), "codigo_idade"].unique().tolist())
     if desconhecidas:
         raise ValueError(f"Categorias etárias não mapeadas retornadas pelo SIDRA: {desconhecidas}")
 
-    bruto = work[colunas["valor"]].astype(str).str.strip()
+    bruto = work[str(colunas["valor"])].astype(str).str.strip()
     numeric = pd.to_numeric(bruto, errors="coerce")
     invalidos = sorted(bruto[numeric.isna()].unique().tolist())
     if invalidos:
