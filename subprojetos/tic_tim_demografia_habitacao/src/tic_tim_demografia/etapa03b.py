@@ -97,7 +97,14 @@ def _classificar_variavel_156(rotulo: str) -> str | None:
     s = _norm(rotulo)
     if "media de moradores" in s:
         return "tam_medio"
-    if "moradores em domicilios particulares ocupados" in s:
+    # O descritor vivo de 2026 expõe a variável 134 como
+    # "Pessoas residentes em domicílios particulares", embora o título da tabela
+    # descreva o universo como moradores em domicílios particulares ocupados.
+    # Aceitam-se ambos os rótulos documentados, sem inferir outras variantes.
+    if (
+        "moradores em domicilios particulares ocupados" in s
+        or s == "pessoas residentes em domicilios particulares"
+    ):
         return "moradores_dpo"
     if "domicilios particulares ocupados" in s:
         return "dpo"
