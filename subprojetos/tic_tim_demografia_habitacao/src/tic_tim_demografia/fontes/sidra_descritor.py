@@ -111,21 +111,39 @@ def localizar_categoria(
     nomes_exatos: Iterable[str] = (),
     termos: Iterable[str] = (),
 ) -> Categoria:
+    """Localiza categoria priorizando correspondência exata antes de busca parcial.
+
+    A prioridade é necessária para rótulos hierárquicos como ``1 morador`` e
+    ``11 moradores``: se uma correspondência exata única existe, ela deve vencer
+    e os termos parciais são usados apenas como fallback semântico.
+    """
     exatos = {_norm(x) for x in nomes_exatos}
     termos_n = tuple(_norm(x) for x in termos)
 
-    candidatas = []
-    for cat in classificacao.categorias:
-        nome = _norm(cat.nome)
-        if nome in exatos or any(t in nome for t in termos_n):
-            candidatas.append(cat)
+    candidatas_exatas = [
+        cat for cat in classificacao.categorias if _norm(cat.nome) in exatos
+    ]
+    if len(candidatas_exatas) == 1:
+        return candidatas_exatas[0]
+    if len(candidatas_exatas) > 1:
+        nomes = [f"{c.codigo}:{c.nome}" for c in candidatas_exatas]
+        raise ValueError(
+            f"Categoria exata ambígua em {classificacao.nome}; candidatas={nomes}"
+        )
 
-    if len(candidatas) != 1:
-        nomes = [f"{c.codigo}:{c.nome}" for c in candidatas]
+    candidatas_termos = []
+    if termos_n:
+        for cat in classificacao.categorias:
+            nome = _norm(cat.nome)
+            if any(t in nome for t in termos_n):
+                candidatas_termos.append(cat)
+
+    if len(candidatas_termos) != 1:
+        nomes = [f"{c.codigo}:{c.nome}" for c in candidatas_termos]
         raise ValueError(
             f"Categoria ambígua/ausente em {classificacao.nome}; candidatas={nomes}"
         )
-    return candidatas[0]
+    return candidatas_termos[0]
 
 
 def resumo_descritor(descritor: Any) -> dict[str, Any]:
