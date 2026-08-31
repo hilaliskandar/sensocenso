@@ -31,6 +31,7 @@ from tic_tim_demografia import (  # noqa: E402
     etapa03c,
     etapa04,
     etapa05a,
+    etapa05b,
 )
 
 
@@ -63,7 +64,8 @@ ETAPAS = [
     Etapa("03c", "domicílios 2022 e integração temporal", etapa03c.executar),
     Etapa("04", "renovação demográfica recente (CWR)", etapa04.executar),
     Etapa("05a", "gate semântico e descoberta das fontes do ISAU", etapa05a.executar),
-    Etapa("05b", "ISAU e privação sanitário-ambiental", ainda_nao_implementada("ISAU e privação sanitário-ambiental"), False),
+    Etapa("05b", "inspeção de arquivos e variáveis do ISAU", etapa05b.executar),
+    Etapa("05c", "cálculo do ISAU C3/C4 e privação", ainda_nao_implementada("cálculo do ISAU C3/C4 e privação"), False),
     Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano"), False),
     Etapa("07", "famílias analíticas", ainda_nao_implementada("famílias analíticas"), False),
     Etapa("08", "sensibilidade P75/P80", ainda_nao_implementada("sensibilidade P75/P80"), False),
