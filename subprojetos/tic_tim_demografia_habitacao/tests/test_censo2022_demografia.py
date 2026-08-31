@@ -19,11 +19,17 @@ def _linha(setor: str, valores: dict[str, int]) -> dict[str, str]:
     return linha
 
 
-def _zip_csv(tmp_path: Path, linhas: list[dict[str, str]], *, tema: str = "demografia") -> Path:
+def _zip_csv(
+    tmp_path: Path,
+    linhas: list[dict[str, str]],
+    *,
+    tema: str = "demografia",
+    encoding: str = "utf-8",
+) -> Path:
     csv = pd.DataFrame(linhas).to_csv(index=False, sep=";")
     path = tmp_path / f"{tema}.zip"
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr(f"Agregados_por_setores_{tema}_BR.csv", csv.encode("utf-8"))
+        zf.writestr(f"Agregados_por_setores_{tema}_BR.csv", csv.encode(encoding))
     return path
 
 
@@ -79,6 +85,17 @@ def test_basico_define_recorte_urbano_e_exclui_rural(tmp_path):
     )
     mun = agregar_demografia_2022_municipio(setores).iloc[0]
     assert mun["pop_total_fonte"] == 10
+
+
+def test_basico_aceita_publicacao_cp1252(tmp_path):
+    basico = _zip_csv(
+        tmp_path,
+        [{"CD_SETOR": "350160805000001", "SITUACAO": "Urbana", "OBS": "condição"}],
+        tema="basico",
+        encoding="cp1252",
+    )
+    urbanos = ler_setores_urbanos_basico_zip(basico, codigos_municipais=["3501608"])
+    assert urbanos["codigo_setor"].tolist() == ["350160805000001"]
 
 
 def test_valor_especial_bloqueia_agregacao(tmp_path):
