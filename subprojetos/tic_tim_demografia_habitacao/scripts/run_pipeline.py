@@ -34,6 +34,7 @@ from tic_tim_demografia import (  # noqa: E402
     etapa05b,
     etapa05c,
     etapa05d,
+    etapa05e,
 )
 
 
@@ -69,6 +70,7 @@ ETAPAS = [
     Etapa("05b", "inspeção de arquivos e variáveis do ISAU", etapa05b.executar),
     Etapa("05c", "cálculo do ISAU C3/C4 e privação", etapa05c.executar),
     Etapa("05d", "estrutura dimensional do ISAU corrigido", etapa05d.executar),
+    Etapa("05e", "ponderação por exposição e priorização do ISAU corrigido", etapa05e.executar),
     Etapa("06", "entorno urbano", ainda_nao_implementada("entorno urbano"), False),
     Etapa("07", "famílias analíticas", ainda_nao_implementada("famílias analíticas"), False),
     Etapa("08", "sensibilidade P75/P80", ainda_nao_implementada("sensibilidade P75/P80"), False),
