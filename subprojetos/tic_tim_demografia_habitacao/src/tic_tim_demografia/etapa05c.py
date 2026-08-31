@@ -251,6 +251,7 @@ def executar(raiz: Path) -> None:
     if universo["codigo_setor"].duplicated().any():
         raise AssertionError("Universo oficial contém CD_SETOR duplicado.")
     chaves = set(universo["codigo_setor"].astype(str))
+    indice_canonico = pd.Index(sorted(chaves), name="codigo_setor")
 
     raw_dom = paths.raw / "ibge" / "censo2022" / "isau" / "domicilios"
     raw_ent = paths.raw / "ibge" / "censo2022" / "isau" / "entorno"
@@ -262,16 +263,25 @@ def executar(raiz: Path) -> None:
     dom2 = _preparar_setor(_ler_csv_zip(_arquivo_por_url(raw_dom, dom2_url)), "CD_setor", "setor")
     dom1 = dom1.loc[dom1.index.isin(chaves)]
     dom2 = dom2.loc[dom2.index.isin(chaves)]
+    cobertura_linhas_fontes = {
+        "domicilio1_linhas_no_universo": int(len(dom1)),
+        "domicilio1_ausentes_no_universo": int(len(chaves) - len(dom1)),
+        "domicilio2_linhas_no_universo": int(len(dom2)),
+        "domicilio2_ausentes_no_universo": int(len(chaves) - len(dom2)),
+    }
 
-    if set(dom1.index) != chaves or set(dom2.index) != chaves:
-        raise AssertionError("Arquivos domiciliares não cobrem exatamente os 9.087 setores do universo.")
+    # A ausência de uma linha no arquivo temático não pode excluir o setor do universo.
+    # O universo canônico é definido pelo Básico; arquivos temáticos são reindexados e
+    # setores não publicados permanecem NaN, do mesmo modo que valores sob sigilo.
+    dom1 = dom1.reindex(indice_canonico)
+    dom2 = dom2.reindex(indice_canonico)
 
-    aer = pd.DataFrame(index=pd.Index(sorted(chaves), name="codigo_setor"))
-    den = _numero(dom1.loc[aer.index, _coluna(dom1, "V00001")], "V00001")
+    aer = pd.DataFrame(index=indice_canonico)
+    den = _numero(dom1[_coluna(dom1, "V00001")], "V00001")
     trabalho = pd.DataFrame(index=aer.index)
     trabalho["V00001"] = den
     for var in A_VARS + E_VARS + R_VARS:
-        trabalho[var] = _numero(dom2.loc[aer.index, _coluna(dom2, var)], var)
+        trabalho[var] = _numero(dom2[_coluna(dom2, var)], var)
     aer = pd.concat([aer, calcular_a(trabalho), calcular_e(trabalho), calcular_r(trabalho)], axis=1)
 
     codigos_bueiro = qa05b.get("codigos_bueiro_por_universo") or {}
@@ -293,8 +303,11 @@ def executar(raiz: Path) -> None:
             _ler_csv_zip(_arquivo_por_url(raw_ent, url)), *chaves_alt[universo_nome]
         )
         df = df.loc[df.index.isin(chaves)]
-        if set(df.index) != chaves:
-            raise AssertionError(f"Entorno {universo_nome} não cobre exatamente o universo setorial.")
+        cobertura_linhas_fontes[f"entorno_{universo_nome}_linhas_no_universo"] = int(len(df))
+        cobertura_linhas_fontes[f"entorno_{universo_nome}_ausentes_no_universo"] = int(
+            len(chaves) - len(df)
+        )
+        df = df.reindex(indice_canonico)
         cod = codigos_bueiro[universo_nome]
         audit = calcular_sem_bueiro(
             df,
@@ -303,7 +316,6 @@ def executar(raiz: Path) -> None:
             nao_declarado=cod["nao_declarado"],
             prefixo=prefixos[universo_nome],
         )
-        audit = audit.loc[aer.index]
         drenagem_audit.append(audit)
         sem_bueiro[universo_nome] = audit[f"{prefixos[universo_nome]}_sem_bueiro"]
 
@@ -396,9 +408,10 @@ def executar(raiz: Path) -> None:
         "drenagem_D2": "D=1-[0.5*media(Domicilios_sem_bueiro,Moradores_sem_bueiro)+0.5*Faces_sem_bueiro]",
         "denominador_drenagem": "em cada universo: nao/(sim+nao); nao declarado excluido do denominador substantivo",
         "codigos_drenagem": codigos_bueiro,
+        "cobertura_linhas_fontes": cobertura_linhas_fontes,
         "cobertura": cobertura,
         "comparacao_referencia_caderno": comparacao,
-        "politica_ausencias": "x/supressao permanece NaN; componentes aditivos E/R exigem todos os numeradores; A exige >=2/3; D2 exige os tres universos",
+        "politica_ausencias": "linha temática ausente, x/supressao e nao disponibilidade permanecem NaN; componentes aditivos E/R exigem todos os numeradores; A exige >=2/3; D2 exige os tres universos",
         "saidas": [
             str(csv_path.relative_to(paths.data_root)),
             str(parquet_path.relative_to(paths.data_root)),
