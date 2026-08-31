@@ -2,6 +2,7 @@ name: TIC-TIM demografia live
 
 # Execucao viva deliberadamente separada do CI offline. Reconstroi as etapas
 # implementadas diretamente das fontes publicas e publica os artefatos de QA.
+# Checkpoint atual: gate semantico 06a dos atributos do entorno.
 on:
   workflow_dispatch:
   push:
