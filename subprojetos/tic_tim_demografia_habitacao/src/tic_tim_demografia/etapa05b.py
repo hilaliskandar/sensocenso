@@ -3,9 +3,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
+
+from openpyxl import load_workbook
 
 from .fontes.http import HttpClient
 from .paths import resolve_paths
@@ -17,6 +20,8 @@ VARIAVEIS_AER = [
     "V00312", "V00313", "V00314", "V00315", "V00316",
     "V00399", "V00400", "V00401", "V00402",
 ]
+VAR_BUEIRO_RE = re.compile(r"\bV0(?:50|52|54)\d{2}\b", re.I)
+UNIVERSO_POR_PREFIXO = {"V050": "domicilios", "V052": "moradores", "V054": "faces"}
 
 
 def _carregar_json(path: Path) -> dict:
@@ -106,6 +111,116 @@ def _mapear_variaveis(inspecoes: list[dict], variaveis: list[str]) -> dict[str, 
     return mapa
 
 
+def _normalizar_texto(valor: object) -> str:
+    return " ".join(str(valor).replace("\n", " ").split()).strip()
+
+
+def inspecionar_dicionario_bueiro(path: Path) -> list[dict]:
+    """Localiza no dicionario oficial linhas que documentam bueiro/boca de lobo.
+
+    O procedimento nao presume o codigo da variavel. Ele procura semanticamente o
+    quesito no XLSX e somente depois extrai codigos V050xx/V052xx/V054xx presentes
+    na propria linha (ou, se necessario, no contexto imediato de uma linha).
+    """
+    wb = load_workbook(path, read_only=True, data_only=True)
+    achados: list[dict] = []
+    for ws in wb.worksheets:
+        linhas = [
+            [_normalizar_texto(v) for v in row]
+            for row in ws.iter_rows(values_only=True)
+        ]
+        for i, valores in enumerate(linhas):
+            texto = " | ".join(v for v in valores if v)
+            cf = texto.casefold()
+            if "bueiro" not in cf and "boca de lobo" not in cf and "boca-de-lobo" not in cf:
+                continue
+            codigos = sorted(set(VAR_BUEIRO_RE.findall(texto.upper())))
+            contexto = texto
+            if not codigos:
+                inicio = max(0, i - 1)
+                fim = min(len(linhas), i + 2)
+                contexto = " || ".join(
+                    " | ".join(v for v in linhas[j] if v) for j in range(inicio, fim)
+                )
+                codigos = sorted(set(VAR_BUEIRO_RE.findall(contexto.upper())))
+            achados.append(
+                {
+                    "planilha": ws.title,
+                    "linha": i + 1,
+                    "texto": texto,
+                    "contexto": contexto if contexto != texto else None,
+                    "codigos": codigos,
+                }
+            )
+    wb.close()
+    return achados
+
+
+def _categoria_bueiro(texto: str) -> str | None:
+    cf = texto.casefold()
+    if "nao declarado" in cf or "não declarado" in cf or "não-declarado" in cf:
+        return "nao_declarado"
+    if "sem bueiro" in cf or "sem boca de lobo" in cf or "sem boca-de-lobo" in cf:
+        return "nao"
+    if re.search(r"(?:^|\W)(?:nao|não)(?:\W|$)", cf):
+        return "nao"
+    if "com bueiro" in cf or "com boca de lobo" in cf or "com boca-de-lobo" in cf:
+        return "sim"
+    if re.search(r"(?:^|\W)sim(?:\W|$)", cf):
+        return "sim"
+    return None
+
+
+def resolver_codigos_bueiro(achados: list[dict]) -> dict[str, dict[str, str]]:
+    """Resolve codigo por universo/categoria usando exclusivamente evidencia do dicionario."""
+    candidatos: dict[str, dict[str, set[str]]] = {
+        u: {"sim": set(), "nao": set(), "nao_declarado": set()}
+        for u in UNIVERSO_POR_PREFIXO.values()
+    }
+    for item in achados:
+        texto = item.get("texto") or item.get("contexto") or ""
+        categoria = _categoria_bueiro(str(texto))
+        if categoria is None:
+            continue
+        for codigo in item.get("codigos", []):
+            codigo = str(codigo).upper()
+            universo = UNIVERSO_POR_PREFIXO.get(codigo[:4])
+            if universo:
+                candidatos[universo][categoria].add(codigo)
+
+    resolvido: dict[str, dict[str, str]] = {}
+    for universo, cats in candidatos.items():
+        if all(len(cats[c]) == 1 for c in ("sim", "nao", "nao_declarado")):
+            resolvido[universo] = {c: next(iter(cats[c])) for c in cats}
+    return resolvido
+
+
+def _candidatos_documentacao(*snapshots: dict) -> list[str]:
+    links: list[str] = []
+    for snap in snapshots:
+        links.extend(str(x) for x in snap.get("links", []))
+    candidatos = []
+    for url in links:
+        nome = _nome(url).casefold()
+        if "dicion" in nome and nome.endswith(".xlsx"):
+            candidatos.append(url)
+    return sorted(set(candidatos))
+
+
+def _validar_codigos_em_cabecalhos(
+    codigos: dict[str, dict[str, str]], inspecoes_entorno: dict[str, dict]
+) -> bool:
+    for universo, categorias in codigos.items():
+        colunas = {
+            c
+            for info in inspecoes_entorno[universo]["csvs"]
+            for c in info["colunas"]
+        }
+        if not all(codigo in colunas for codigo in categorias.values()):
+            return False
+    return len(codigos) == 3
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     paths = resolve_paths(raiz)
@@ -129,8 +244,10 @@ def executar(raiz: Path) -> None:
     cliente = HttpClient(timeout=600)
     raw_dom = paths.raw / "ibge" / "censo2022" / "isau" / "domicilios"
     raw_ent = paths.raw / "ibge" / "censo2022" / "isau" / "entorno"
+    raw_doc = paths.raw / "ibge" / "censo2022" / "isau" / "documentacao"
     raw_dom.mkdir(parents=True, exist_ok=True)
     raw_ent.mkdir(parents=True, exist_ok=True)
+    raw_doc.mkdir(parents=True, exist_ok=True)
 
     inspecoes_dom = []
     for url in urls_dom:
@@ -146,21 +263,50 @@ def executar(raiz: Path) -> None:
     faltantes = sorted(v for v, fontes in mapa_aer.items() if not fontes)
     ambiguas = {v: fontes for v, fontes in mapa_aer.items() if len(fontes) > 1}
 
-    # O snapshot guarda todos os links, nao apenas ZIP. Registrar candidatos a
-    # dicionario/documentacao para que o codigo de bueiro seja resolvido por fonte,
-    # nunca por memoria ou por inferencia a partir da sequencia V05xxx.
     snap_ent = _carregar_json(
         paths.raw / "ibge" / "indices_publicacao" / "censo2022_entorno_setor.json"
     )
-    links_ent = [str(x) for x in snap_ent.get("links", [])]
-    candidatos_dicionario = [
-        x for x in links_ent
-        if any(t in _nome(x).casefold() for t in ("dicion", "document", "nota", "metod", "xlsx", "ods"))
-    ]
+    snap_agreg = _carregar_json(
+        paths.raw / "ibge" / "indices_publicacao" / "censo2022_agregados_setor.json"
+    )
+    candidatos_dicionario = _candidatos_documentacao(snap_ent, snap_agreg)
+
+    evidencias_dicionario: list[dict] = []
+    codigos_bueiro: dict[str, dict[str, str]] = {}
+    dicionario_resolvedor: str | None = None
+    erros_dicionario: list[dict] = []
+    for url in candidatos_dicionario:
+        try:
+            path = _baixar_se_ausente(cliente, url, raw_doc / _nome(url), manifesto)
+            achados = inspecionar_dicionario_bueiro(path)
+            resolvido = resolver_codigos_bueiro(achados)
+            evidencias_dicionario.append(
+                {
+                    "url": url,
+                    "arquivo": path.name,
+                    "n_linhas_bueiro": len(achados),
+                    "achados": achados,
+                    "codigos_resolvidos": resolvido,
+                }
+            )
+            if _validar_codigos_em_cabecalhos(resolvido, inspecoes_entorno):
+                codigos_bueiro = resolvido
+                dicionario_resolvedor = url
+                break
+        except Exception as exc:  # manter diagnostico auditavel; outro candidato pode resolver
+            erros_dicionario.append({"url": url, "erro": f"{type(exc).__name__}: {exc}"})
 
     status_aer = "RESOLVIDO" if not faltantes and not ambiguas else "PENDENTE"
+    status_d = "RESOLVIDO" if codigos_bueiro else "PENDENTE"
+    if status_aer == "RESOLVIDO" and status_d == "RESOLVIDO":
+        status = "RESOLVIDO_AER_DRENAGEM"
+    elif status_aer == "RESOLVIDO":
+        status = "RESOLVIDO_AER_PENDENTE_DRENAGEM"
+    else:
+        status = "DIAGNOSTICO_ESTRUTURAL"
+
     qa = {
-        "status": "RESOLVIDO_AER_PENDENTE_DRENAGEM" if status_aer == "RESOLVIDO" else "DIAGNOSTICO_ESTRUTURAL",
+        "status": status,
         "etapa": "05b",
         "arquivos_domiciliares": urls_dom,
         "arquivos_entorno": urls_entorno,
@@ -170,12 +316,22 @@ def executar(raiz: Path) -> None:
         "variaveis_aer_faltantes": faltantes,
         "variaveis_aer_ambiguas": ambiguas,
         "candidatos_documentacao_entorno": candidatos_dicionario,
+        "dicionario_resolvedor_bueiro": dicionario_resolvedor,
+        "codigos_bueiro_por_universo": codigos_bueiro,
+        "evidencias_dicionario_bueiro": evidencias_dicionario,
+        "erros_dicionario": erros_dicionario,
         "regra": (
             "A/E/R somente podem ser calculados depois de todas as variaveis requeridas serem "
-            "localizadas em cabecalhos oficiais; D somente depois de o codigo de bueiro/boca de lobo "
-            "ser comprovado no dicionario/documentacao dos tres universos"
+            "localizadas em cabecalhos oficiais; D somente depois de os codigos de bueiro/boca de "
+            "lobo serem comprovados no dicionario oficial e reencontrados nos cabecalhos dos tres universos"
         ),
-        "proximo_gate": "05c calcula A/E/R/D e ISAU C4/C3 somente apos resolucao documental da drenagem",
+        "regra_drenagem": (
+            "Em cada universo, Sim e Nao formam o denominador valido; Nao declarado permanece "
+            "ausente da proporcao substantiva. O calculo de D sera delegado ao 05c, que le os codigos deste QA."
+        ),
+        "proximo_gate": (
+            "05c calcula A/E/R/D e ISAU C4/C3 somente se status=RESOLVIDO_AER_DRENAGEM"
+        ),
     }
     destino = paths.qa / "etapa05b_inspecao_fontes_isau.json"
     destino.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
