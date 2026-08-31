@@ -6,8 +6,9 @@ import json
 import re
 import zipfile
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
+from bs4 import BeautifulSoup
 from openpyxl import load_workbook
 
 from .fontes.http import HttpClient
@@ -116,19 +117,11 @@ def _normalizar_texto(valor: object) -> str:
 
 
 def inspecionar_dicionario_bueiro(path: Path) -> list[dict]:
-    """Localiza no dicionario oficial linhas que documentam bueiro/boca de lobo.
-
-    O procedimento nao presume o codigo da variavel. Ele procura semanticamente o
-    quesito no XLSX e somente depois extrai codigos V050xx/V052xx/V054xx presentes
-    na propria linha (ou, se necessario, no contexto imediato de uma linha).
-    """
+    """Localiza no dicionario oficial linhas que documentam bueiro/boca de lobo."""
     wb = load_workbook(path, read_only=True, data_only=True)
     achados: list[dict] = []
     for ws in wb.worksheets:
-        linhas = [
-            [_normalizar_texto(v) for v in row]
-            for row in ws.iter_rows(values_only=True)
-        ]
+        linhas = [[_normalizar_texto(v) for v in row] for row in ws.iter_rows(values_only=True)]
         for i, valores in enumerate(linhas):
             texto = " | ".join(v for v in valores if v)
             cf = texto.casefold()
@@ -207,15 +200,37 @@ def _candidatos_documentacao(*snapshots: dict) -> list[str]:
     return sorted(set(candidatos))
 
 
+def _listar_xlsx_pagina(cliente: HttpClient, url: str) -> list[str]:
+    resposta = cliente._get(url)
+    soup = BeautifulSoup(resposta.text, "html.parser")
+    return sorted(
+        set(
+            urljoin(resposta.url, str(a["href"]))
+            for a in soup.find_all("a", href=True)
+            if str(a["href"]).casefold().endswith(".xlsx")
+        )
+    )
+
+
+def _descobrir_dicionarios_parent(cliente: HttpClient, urls: list[str]) -> list[str]:
+    """Descobre XLSX de documentacao nas paginas-pai oficiais, sem fixar nome de arquivo."""
+    candidatos: list[str] = []
+    for url in urls:
+        try:
+            for link in _listar_xlsx_pagina(cliente, url):
+                nome = _nome(link).casefold()
+                if "dicion" in nome or "document" in nome:
+                    candidatos.append(link)
+        except Exception:
+            continue
+    return sorted(set(candidatos))
+
+
 def _validar_codigos_em_cabecalhos(
     codigos: dict[str, dict[str, str]], inspecoes_entorno: dict[str, dict]
 ) -> bool:
     for universo, categorias in codigos.items():
-        colunas = {
-            c
-            for info in inspecoes_entorno[universo]["csvs"]
-            for c in info["colunas"]
-        }
+        colunas = {c for info in inspecoes_entorno[universo]["csvs"] for c in info["colunas"]}
         if not all(codigo in colunas for codigo in categorias.values()):
             return False
     return len(codigos) == 3
@@ -263,13 +278,15 @@ def executar(raiz: Path) -> None:
     faltantes = sorted(v for v, fontes in mapa_aer.items() if not fontes)
     ambiguas = {v: fontes for v, fontes in mapa_aer.items() if len(fontes) > 1}
 
-    snap_ent = _carregar_json(
-        paths.raw / "ibge" / "indices_publicacao" / "censo2022_entorno_setor.json"
-    )
-    snap_agreg = _carregar_json(
-        paths.raw / "ibge" / "indices_publicacao" / "censo2022_agregados_setor.json"
-    )
+    snap_ent = _carregar_json(paths.raw / "ibge" / "indices_publicacao" / "censo2022_entorno_setor.json")
+    snap_agreg = _carregar_json(paths.raw / "ibge" / "indices_publicacao" / "censo2022_agregados_setor.json")
     candidatos_dicionario = _candidatos_documentacao(snap_ent, snap_agreg)
+    paginas_parent = [
+        "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/",
+        "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/",
+    ]
+    if not candidatos_dicionario:
+        candidatos_dicionario = _descobrir_dicionarios_parent(cliente, paginas_parent)
 
     evidencias_dicionario: list[dict] = []
     codigos_bueiro: dict[str, dict[str, str]] = {}
@@ -281,19 +298,13 @@ def executar(raiz: Path) -> None:
             achados = inspecionar_dicionario_bueiro(path)
             resolvido = resolver_codigos_bueiro(achados)
             evidencias_dicionario.append(
-                {
-                    "url": url,
-                    "arquivo": path.name,
-                    "n_linhas_bueiro": len(achados),
-                    "achados": achados,
-                    "codigos_resolvidos": resolvido,
-                }
+                {"url": url, "arquivo": path.name, "n_linhas_bueiro": len(achados), "achados": achados, "codigos_resolvidos": resolvido}
             )
             if _validar_codigos_em_cabecalhos(resolvido, inspecoes_entorno):
                 codigos_bueiro = resolvido
                 dicionario_resolvedor = url
                 break
-        except Exception as exc:  # manter diagnostico auditavel; outro candidato pode resolver
+        except Exception as exc:
             erros_dicionario.append({"url": url, "erro": f"{type(exc).__name__}: {exc}"})
 
     status_aer = "RESOLVIDO" if not faltantes and not ambiguas else "PENDENTE"
@@ -316,27 +327,22 @@ def executar(raiz: Path) -> None:
         "variaveis_aer_faltantes": faltantes,
         "variaveis_aer_ambiguas": ambiguas,
         "candidatos_documentacao_entorno": candidatos_dicionario,
+        "paginas_parent_documentacao": paginas_parent,
         "dicionario_resolvedor_bueiro": dicionario_resolvedor,
         "codigos_bueiro_por_universo": codigos_bueiro,
         "evidencias_dicionario_bueiro": evidencias_dicionario,
         "erros_dicionario": erros_dicionario,
         "regra": (
-            "A/E/R somente podem ser calculados depois de todas as variaveis requeridas serem "
-            "localizadas em cabecalhos oficiais; D somente depois de os codigos de bueiro/boca de "
-            "lobo serem comprovados no dicionario oficial e reencontrados nos cabecalhos dos tres universos"
+            "A/E/R somente podem ser calculados depois de todas as variaveis requeridas serem localizadas em cabecalhos oficiais; "
+            "D somente depois de os codigos de bueiro/boca de lobo serem comprovados no dicionario oficial e reencontrados nos cabecalhos dos tres universos"
         ),
         "regra_drenagem": (
-            "Em cada universo, Sim e Nao formam o denominador valido; Nao declarado permanece "
-            "ausente da proporcao substantiva. O calculo de D sera delegado ao 05c, que le os codigos deste QA."
+            "Em cada universo, Sim e Nao formam o denominador valido; Nao declarado permanece ausente da proporcao substantiva. "
+            "O calculo de D sera delegado ao 05c, que le os codigos deste QA."
         ),
-        "proximo_gate": (
-            "05c calcula A/E/R/D e ISAU C4/C3 somente se status=RESOLVIDO_AER_DRENAGEM"
-        ),
+        "proximo_gate": "05c calcula A/E/R/D e ISAU C4/C3 somente se status=RESOLVIDO_AER_DRENAGEM",
     }
     destino = paths.qa / "etapa05b_inspecao_fontes_isau.json"
     destino.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
-    registrar_evento(
-        manifesto,
-        {"tipo": "etapa", "etapa": "05b", "status": qa["status"], "saida": str(destino.relative_to(paths.data_root))},
-    )
+    registrar_evento(manifesto, {"tipo": "etapa", "etapa": "05b", "status": qa["status"], "saida": str(destino.relative_to(paths.data_root))})
     print(json.dumps(qa, ensure_ascii=False, indent=2))
