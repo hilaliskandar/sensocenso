@@ -37,7 +37,6 @@ def _nome(url: str) -> str:
 
 
 def _selecionar_domicilios(candidatos: list[str]) -> list[str]:
-    """Mantem somente os tres arquivos gerais de caracteristicas domiciliares."""
     escolhidos = []
     for url in candidatos:
         nome = _nome(url).casefold()
@@ -71,7 +70,6 @@ def _cabecalho_csv(bruto: bytes) -> tuple[str, str, list[str]]:
 
 
 def inspecionar_zip(path: Path) -> dict:
-    """Le apenas membros e a primeira linha dos CSVs, sem carregar a base integral."""
     csvs = []
     with zipfile.ZipFile(path) as zf:
         membros = zf.namelist()
@@ -116,9 +114,7 @@ def _normalizar_texto(valor: object) -> str:
     return " ".join(str(valor).replace("\n", " ").split()).strip()
 
 
-def inspecionar_dicionario_bueiro(path: Path) -> list[dict]:
-    """Localiza no dicionario oficial linhas que documentam bueiro/boca de lobo."""
-    wb = load_workbook(path, read_only=True, data_only=True)
+def _inspecionar_workbook_bueiro(wb, origem: str) -> list[dict]:
     achados: list[dict] = []
     for ws in wb.worksheets:
         linhas = [[_normalizar_texto(v) for v in row] for row in ws.iter_rows(values_only=True)]
@@ -138,6 +134,7 @@ def inspecionar_dicionario_bueiro(path: Path) -> list[dict]:
                 codigos = sorted(set(VAR_BUEIRO_RE.findall(contexto.upper())))
             achados.append(
                 {
+                    "origem_interna": origem,
                     "planilha": ws.title,
                     "linha": i + 1,
                     "texto": texto,
@@ -145,8 +142,31 @@ def inspecionar_dicionario_bueiro(path: Path) -> list[dict]:
                     "codigos": codigos,
                 }
             )
-    wb.close()
     return achados
+
+
+def inspecionar_dicionario_bueiro(path: Path) -> list[dict]:
+    """Localiza bueiro/boca de lobo em XLSX solto ou em pacote ZIP oficial."""
+    if path.suffix.casefold() == ".zip":
+        achados: list[dict] = []
+        with zipfile.ZipFile(path) as zf:
+            membros = [m for m in zf.namelist() if m.casefold().endswith(".xlsx")]
+            if not membros:
+                raise ValueError(f"ZIP de documentacao sem XLSX: {path}")
+            for membro in membros:
+                bruto = zf.read(membro)
+                wb = load_workbook(io.BytesIO(bruto), read_only=True, data_only=True)
+                try:
+                    achados.extend(_inspecionar_workbook_bueiro(wb, membro))
+                finally:
+                    wb.close()
+        return achados
+
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        return _inspecionar_workbook_bueiro(wb, path.name)
+    finally:
+        wb.close()
 
 
 def _categoria_bueiro(texto: str) -> str | None:
@@ -165,7 +185,6 @@ def _categoria_bueiro(texto: str) -> str | None:
 
 
 def resolver_codigos_bueiro(achados: list[dict]) -> dict[str, dict[str, str]]:
-    """Resolve codigo por universo/categoria usando exclusivamente evidencia do dicionario."""
     candidatos: dict[str, dict[str, set[str]]] = {
         u: {"sim": set(), "nao": set(), "nao_declarado": set()}
         for u in UNIVERSO_POR_PREFIXO.values()
@@ -195,32 +214,31 @@ def _candidatos_documentacao(*snapshots: dict) -> list[str]:
     candidatos = []
     for url in links:
         nome = _nome(url).casefold()
-        if "dicion" in nome and nome.endswith(".xlsx"):
+        if "dicion" in nome and (nome.endswith(".xlsx") or nome.endswith(".zip")):
             candidatos.append(url)
     return sorted(set(candidatos))
 
 
-def _listar_xlsx_pagina(cliente: HttpClient, url: str) -> list[str]:
+def _listar_documentacao_pagina(cliente: HttpClient, url: str) -> list[str]:
     resposta = cliente._get(url)
     soup = BeautifulSoup(resposta.text, "html.parser")
-    return sorted(
-        set(
-            urljoin(resposta.url, str(a["href"]))
-            for a in soup.find_all("a", href=True)
-            if str(a["href"]).casefold().endswith(".xlsx")
-        )
-    )
+    links: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = str(a["href"])
+        nome = _nome(href).casefold()
+        if not (nome.endswith(".xlsx") or nome.endswith(".zip")):
+            continue
+        if "dicion" not in nome and "document" not in nome:
+            continue
+        links.append(urljoin(resposta.url, href))
+    return sorted(set(links))
 
 
 def _descobrir_dicionarios_parent(cliente: HttpClient, urls: list[str]) -> list[str]:
-    """Descobre XLSX de documentacao nas paginas-pai oficiais, sem fixar nome de arquivo."""
     candidatos: list[str] = []
     for url in urls:
         try:
-            for link in _listar_xlsx_pagina(cliente, url):
-                nome = _nome(link).casefold()
-                if "dicion" in nome or "document" in nome:
-                    candidatos.append(link)
+            candidatos.extend(_listar_documentacao_pagina(cliente, url))
         except Exception:
             continue
     return sorted(set(candidatos))
@@ -298,7 +316,13 @@ def executar(raiz: Path) -> None:
             achados = inspecionar_dicionario_bueiro(path)
             resolvido = resolver_codigos_bueiro(achados)
             evidencias_dicionario.append(
-                {"url": url, "arquivo": path.name, "n_linhas_bueiro": len(achados), "achados": achados, "codigos_resolvidos": resolvido}
+                {
+                    "url": url,
+                    "arquivo": path.name,
+                    "n_linhas_bueiro": len(achados),
+                    "achados": achados,
+                    "codigos_resolvidos": resolvido,
+                }
             )
             if _validar_codigos_em_cabecalhos(resolvido, inspecoes_entorno):
                 codigos_bueiro = resolvido
@@ -344,5 +368,13 @@ def executar(raiz: Path) -> None:
     }
     destino = paths.qa / "etapa05b_inspecao_fontes_isau.json"
     destino.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
-    registrar_evento(manifesto, {"tipo": "etapa", "etapa": "05b", "status": qa["status"], "saida": str(destino.relative_to(paths.data_root))})
+    registrar_evento(
+        manifesto,
+        {
+            "tipo": "etapa",
+            "etapa": "05b",
+            "status": qa["status"],
+            "saida": str(destino.relative_to(paths.data_root)),
+        },
+    )
     print(json.dumps(qa, ensure_ascii=False, indent=2))
