@@ -3,9 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import carregar_fontes
+from .fontes.http import salvar_snapshot_indice
 from .fontes.sidra import baixar_descritor_tabela
 from .paths import resolve_paths
 from .proveniencia import registrar_evento
+
+
+FONTES_COM_INDICE = (
+    "censo2022_agregados_setor",
+    "censo2022_entorno_setor",
+    "censo2022_fcu",
+    "censo2022_cnefe_municipios",
+)
 
 
 def executar(raiz: Path) -> None:
@@ -16,25 +25,40 @@ def executar(raiz: Path) -> None:
     manifesto = paths.manifests / "execucao.jsonl"
 
     saidas: list[str] = []
+
+    # 01a — congela os descritores SIDRA antes de resolver classificações e consultas.
     destino_sidra = paths.raw / "ibge" / "sidra" / "descritores"
     destino_sidra.mkdir(parents=True, exist_ok=True)
-
     for chave in ("sidra_2000_idade", "sidra_2010_idade"):
         tabela = int(fontes["fontes"][chave]["tabela"])
         destino = destino_sidra / f"descritor_tabela_{tabela}.json"
-        baixar_descritor_tabela(tabela, destino, manifesto=manifesto)
+        if not destino.exists():
+            baixar_descritor_tabela(tabela, destino, manifesto=manifesto)
+        saidas.append(str(destino.relative_to(paths.data_root)))
+
+    # 01b — congela os índices públicos do IBGE. O snapshot permite saber quais
+    # arquivos estavam publicados no momento da execução, sem depender de Drive
+    # ou de uma seleção manual feita em navegador.
+    destino_indices = paths.raw / "ibge" / "indices_publicacao"
+    destino_indices.mkdir(parents=True, exist_ok=True)
+    for chave in FONTES_COM_INDICE:
+        fonte = fontes["fontes"][chave]
+        url = str(fonte["discovery_url"])
+        destino = destino_indices / f"{chave}.json"
+        if not destino.exists():
+            salvar_snapshot_indice(url, destino, manifesto=manifesto)
         saidas.append(str(destino.relative_to(paths.data_root)))
 
     registrar_evento(
         manifesto,
         {
             "tipo": "etapa",
-            "etapa": "01a",
+            "etapa": "01",
             "status": "OK",
-            "descricao": "descritores SIDRA baixados e congelados",
+            "descricao": "descritores SIDRA e snapshots dos índices públicos IBGE congelados",
             "saidas_relativas_data_root": saidas,
         },
     )
-    print("Descritores SIDRA congelados:")
+    print("Fontes de descoberta congeladas:")
     for saida in saidas:
         print(f"- {saida}")
