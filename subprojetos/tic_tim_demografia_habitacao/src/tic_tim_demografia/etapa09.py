@@ -21,6 +21,13 @@ MALHA_SP_URL = (
     "SP_setores_CD2022.zip"
 )
 
+EXPECTED_C3 = 8291
+EXPECTED_INTEGRATED = 8073
+EXPECTED_ISLANDS = 177
+EXPECTED_MORAN_N = 7896
+EXPECTED_EDGES = 19314
+EXPECTED_CROSS_MUN = 304
+
 
 def _baixar_malha(destino: Path, manifesto: Path) -> Path:
     if destino.exists():
@@ -60,6 +67,65 @@ def _queen(gdf: gpd.GeoDataFrame) -> Queen:
     return Queen.from_dataframe(gdf, ids=ids, silence_warnings=True)
 
 
+def _arestas_unicas(w: Queen) -> set[tuple[str, str]]:
+    arestas: set[tuple[str, str]] = set()
+    for origem, vizinhos in w.neighbors.items():
+        for destino in vizinhos:
+            a, b = sorted((str(origem), str(destino)))
+            if a != b:
+                arestas.add((a, b))
+    return arestas
+
+
+def _diagnostico_cobertura(base: pd.DataFrame) -> dict[str, int]:
+    c3 = base["PRIV_C3"].notna()
+    pop = base["POP_TOTAL"].notna()
+    dppo = base["DPPO"].notna()
+    return {
+        "n_total": int(len(base)),
+        "n_c3": int(c3.sum()),
+        "n_c3_pop": int((c3 & pop).sum()),
+        "n_c3_dppo": int((c3 & dppo).sum()),
+        "n_c3_pop_dppo": int((c3 & pop & dppo).sum()),
+        "n_pop": int(pop.sum()),
+        "n_dppo": int(dppo.sum()),
+    }
+
+
+def _moran_por_transformacao(
+    gdf: gpd.GeoDataFrame,
+    transformacao: str,
+    permutacoes: int,
+    *,
+    seed: int,
+) -> dict[str, float | int | str]:
+    w = _queen(gdf)
+    if w.islands:
+        raise AssertionError(f"Moran recebeu universo com ilhas: {w.islands[:20]}")
+    valores = (
+        gdf.set_index("codigo_setor")
+        .loc[w.id_order, "PRIV_C3"]
+        .astype(float)
+        .to_numpy()
+    )
+    np.random.seed(seed)
+    moran = Moran(
+        valores,
+        w,
+        transformation=transformacao,
+        permutations=permutacoes,
+    )
+    return {
+        "transformacao": transformacao,
+        "I": float(moran.I),
+        "EI": float(moran.EI),
+        "p_sim": float(moran.p_sim),
+        "z_sim": float(moran.z_sim),
+        "permutacoes": int(permutacoes),
+        "semente": int(seed),
+    }
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     paths = resolve_paths(raiz)
@@ -67,111 +133,151 @@ def executar(raiz: Path) -> None:
     manifesto = paths.manifests / "execucao.jsonl"
     parametros = carregar_parametros(raiz / "config/parametros.yml")
     qa_ref = parametros.get("qa_referencia", {})
-    esperado_final = int(qa_ref.get("setores_universo_final", 8073))
     permutacoes = int(parametros["espacial"]["permutacoes_moran"])
 
     entrada = paths.processed / "setorial" / "base_familias_sensibilidade_p75_p80.parquet"
-    if not entrada.exists():
-        raise FileNotFoundError(f"Pré-requisito 09 ausente: {entrada}. Execute primeiro --etapa 08.")
+    exposicao_path = paths.processed / "setorial" / "base_isau_priorizacao_2022.parquet"
+    for path in (entrada, exposicao_path):
+        if not path.exists():
+            raise FileNotFoundError(f"Pré-requisito 09 ausente: {path}")
+
     base = pd.read_parquet(entrada)
     base["codigo_setor"] = base["codigo_setor"].astype("string").str.strip()
     if base["codigo_setor"].duplicated().any():
         raise AssertionError("Base analítica possui CD_SETOR duplicado antes da validação espacial.")
 
-    # O fechamento espacial histórico parte do universo C3 observável. Setores sem
-    # PRIV_C3 não entram no Moran e não podem definir contiguidade do indicador.
-    candidato = base.loc[base["PRIV_C3"].notna()].copy()
-    if len(candidato) != 8291:
+    exposicao = pd.read_parquet(exposicao_path)[["codigo_setor", "POP_TOTAL", "DPPO"]].copy()
+    exposicao["codigo_setor"] = exposicao["codigo_setor"].astype("string").str.strip()
+    if exposicao["codigo_setor"].duplicated().any():
+        raise AssertionError("Base de exposição 05e possui CD_SETOR duplicado.")
+    base = base.merge(exposicao, on="codigo_setor", how="left", validate="one_to_one")
+
+    diagnostico = _diagnostico_cobertura(base)
+    if diagnostico["n_c3"] != EXPECTED_C3:
         raise AssertionError(
-            "Universo C3 antes da validação espacial divergiu do fechamento metodológico: "
-            f"{len(candidato)} != 8291"
+            "Universo C3 divergiu do fechamento metodológico: "
+            f"{diagnostico['n_c3']} != {EXPECTED_C3}"
+        )
+
+    # Gate de compatibilidade temática do universo integrado. Esta hipótese é
+    # explicitamente testada contra a referência auditada: C3 observável +
+    # exposição populacional + domicílios ocupados observáveis. Se não fechar
+    # exatamente em 8.073, a execução para com o diagnóstico e NÃO remove casos
+    # arbitrariamente para alcançar a contagem histórica.
+    integrado = base.loc[
+        base["PRIV_C3"].notna()
+        & base["POP_TOTAL"].notna()
+        & base["DPPO"].notna()
+    ].copy()
+    if len(integrado) != EXPECTED_INTEGRATED:
+        raise AssertionError(
+            "Hipótese executável do universo integrado não reproduziu 8.073 setores. "
+            f"diagnostico={diagnostico}. É necessário recuperar o gate histórico de "
+            "compatibilidade temática; não ajustar a amostra manualmente."
         )
 
     raw_dir = paths.raw / "ibge" / "censo2022" / "malha_setores"
     raw_dir.mkdir(parents=True, exist_ok=True)
     malha_zip = _baixar_malha(raw_dir / "SP_setores_CD2022.zip", manifesto)
-    geometrias = _carregar_geometrias(malha_zip, set(candidato["codigo_setor"].astype(str)))
+    geometrias = _carregar_geometrias(malha_zip, set(integrado["codigo_setor"].astype(str)))
 
     faltantes_geometria = sorted(
-        set(candidato["codigo_setor"].astype(str)) - set(geometrias["codigo_setor"].astype(str))
+        set(integrado["codigo_setor"].astype(str)) - set(geometrias["codigo_setor"].astype(str))
     )
     if faltantes_geometria:
         raise AssertionError(
-            f"Setores C3 sem geometria na malha oficial: n={len(faltantes_geometria)}; "
+            f"Setores integrados sem geometria na malha oficial: n={len(faltantes_geometria)}; "
             f"amostra={faltantes_geometria[:20]}"
         )
 
-    espacial = geometrias.merge(candidato, on="codigo_setor", how="inner", validate="one_to_one")
+    espacial = geometrias.merge(integrado, on="codigo_setor", how="inner", validate="one_to_one")
     espacial = gpd.GeoDataFrame(espacial, geometry="geometry", crs=geometrias.crs)
-
-    w_inicial = _queen(espacial)
-    ilhas = sorted(str(x) for x in w_inicial.islands)
-    ilhas_path = paths.qa / "etapa09_ilhas_queen_c3.csv"
-    pd.DataFrame({"codigo_setor": ilhas}).to_csv(ilhas_path, index=False, encoding="utf-8")
-    registrar_arquivo(manifesto, ilhas_path, origem="Etapa 09 - ilhas Queen no universo C3")
-
-    final = espacial.loc[~espacial["codigo_setor"].astype(str).isin(ilhas)].copy()
-    if len(final) != esperado_final:
+    if len(espacial) != EXPECTED_INTEGRATED:
         raise AssertionError(
-            "Recorte espacial não reproduziu o universo final auditado: "
-            f"C3={len(espacial)}, ilhas={len(ilhas)}, final={len(final)}, esperado={esperado_final}. "
-            "Não ajustar o recorte manualmente; investigar geometria/vizinhança."
+            f"Join geometria × universo integrado alterou o universo: {len(espacial)}"
         )
 
-    w = _queen(final)
-    if w.islands:
-        raise AssertionError(f"Persistem ilhas após o recorte espacial: {w.islands[:20]}")
-    w.transform = "R"
+    w_integrado = _queen(espacial)
+    ilhas = sorted(str(x) for x in w_integrado.islands)
+    arestas = _arestas_unicas(w_integrado)
+    municipio = espacial.set_index("codigo_setor")["codigo_ibge"].astype(str).to_dict()
+    arestas_cross = sum(municipio[a] != municipio[b] for a, b in arestas)
 
-    np.random.seed(20260830)
-    valores = final.set_index("codigo_setor").loc[w.id_order, "PRIV_C3"].astype(float).to_numpy()
-    moran = Moran(valores, w, permutations=permutacoes)
+    invariantes = {
+        "universo_integrado": int(len(espacial)),
+        "ilhas_queen": int(len(ilhas)),
+        "arestas_queen_unicas": int(len(arestas)),
+        "arestas_cross_municipais": int(arestas_cross),
+    }
+    esperados = {
+        "universo_integrado": EXPECTED_INTEGRATED,
+        "ilhas_queen": EXPECTED_ISLANDS,
+        "arestas_queen_unicas": EXPECTED_EDGES,
+        "arestas_cross_municipais": EXPECTED_CROSS_MUN,
+    }
+    divergencias = {
+        k: {"observado": invariantes[k], "esperado": v}
+        for k, v in esperados.items()
+        if invariantes[k] != v
+    }
+    if divergencias:
+        raise AssertionError(
+            "Topologia Queen não reproduziu os invariantes auditados; "
+            f"divergencias={divergencias}. Não corrigir manualmente."
+        )
 
+    ilhas_path = paths.qa / "etapa09_ilhas_queen_8073.csv"
+    pd.DataFrame({"codigo_setor": ilhas}).to_csv(ilhas_path, index=False, encoding="utf-8")
+    registrar_arquivo(manifesto, ilhas_path, origem="Etapa 09 - ilhas Queen no universo integrado")
+
+    moran_base = espacial.loc[
+        ~espacial["codigo_setor"].astype(str).isin(ilhas)
+    ].copy()
+    if len(moran_base) != EXPECTED_MORAN_N:
+        raise AssertionError(
+            f"Universo do Moran não fechou: {len(moran_base)} != {EXPECTED_MORAN_N}"
+        )
+
+    # O caderno preserva o valor de referência, mas registra que a transformação
+    # canônica da matriz de pesos deve ser recuperada do artefato computacional
+    # original, não inferida retrospectivamente. Por isso são calculadas e
+    # registradas as especificações R e B; nenhuma é promovida a canônica apenas
+    # por proximidade numérica com o resultado histórico.
+    seed = 20260830
+    moran_r = _moran_por_transformacao(moran_base, "r", permutacoes, seed=seed)
+    moran_b = _moran_por_transformacao(moran_base, "b", permutacoes, seed=seed)
     ref_i = float(qa_ref.get("moran_privacao_aprox", 0.3507))
     ref_p = float(qa_ref.get("moran_pvalor", 0.002))
-    if abs(float(moran.I) - ref_i) > 0.01:
-        raise AssertionError(
-            f"Moran I divergiu da referência auditada: {moran.I:.6f} vs ~{ref_i:.6f}"
-        )
-    if abs(float(moran.p_sim) - ref_p) > (1.0 / (permutacoes + 1) + 1e-12):
-        raise AssertionError(
-            f"p-valor simulado divergiu da referência auditada: {moran.p_sim:.6f} vs {ref_p:.6f}"
-        )
+    for resultado in (moran_r, moran_b):
+        resultado["delta_I_referencia"] = abs(float(resultado["I"]) - ref_i)
+        resultado["delta_p_referencia"] = abs(float(resultado["p_sim"]) - ref_p)
 
     out_dir = paths.processed / "espacial"
     out_dir.mkdir(parents=True, exist_ok=True)
     gpkg_path = out_dir / "base_integrada_espacial_8073.gpkg"
     parquet_path = out_dir / "base_integrada_espacial_8073.parquet"
-    final.to_file(gpkg_path, layer="setores", driver="GPKG")
-    final.to_parquet(parquet_path, index=False)
-    registrar_arquivo(manifesto, gpkg_path, origem="Etapa 09 - malha oficial IBGE + recorte Queen")
-    registrar_arquivo(manifesto, parquet_path, origem="Etapa 09 - malha oficial IBGE + recorte Queen")
+    espacial.to_file(gpkg_path, layer="setores", driver="GPKG")
+    espacial.to_parquet(parquet_path, index=False)
+    registrar_arquivo(manifesto, gpkg_path, origem="Etapa 09 - malha oficial IBGE + universo integrado")
+    registrar_arquivo(manifesto, parquet_path, origem="Etapa 09 - malha oficial IBGE + universo integrado")
 
     qa = {
-        "status": "OK",
+        "status": "OK_COM_PENDENCIA_TRANSFORMACAO_MORAN",
         "etapa": "09",
         "fonte_malha": MALHA_SP_URL,
-        "crs_malha": str(final.crs),
-        "universo_urbano_amplo": int(len(base)),
-        "universo_c3": int(len(candidato)),
-        "geometrias_c3": int(len(espacial)),
-        "ilhas_queen_removidas": int(len(ilhas)),
-        "universo_final": int(len(final)),
-        "regra_universo_final": "PRIV_C3 observável e pelo menos um vizinho Queen no universo C3",
-        "moran_priv_c3": {
-            "I": float(moran.I),
-            "EI": float(moran.EI),
-            "p_sim": float(moran.p_sim),
-            "z_sim": float(moran.z_sim),
-            "permutacoes": permutacoes,
-            "transformacao_pesos": "R",
-            "semente": 20260830,
-        },
-        "referencias": {
-            "universo_final": esperado_final,
-            "moran_I_aprox": ref_i,
-            "moran_p": ref_p,
-        },
+        "crs_malha": str(espacial.crs),
+        "gate_compatibilidade_tematica": (
+            "PRIV_C3, POP_TOTAL e DPPO simultaneamente observáveis; gate aceito somente se reproduzir 8.073"
+        ),
+        "diagnostico_cobertura": diagnostico,
+        "invariantes_topologicos": invariantes,
+        "universo_moran": int(len(moran_base)),
+        "moran_candidatos": {"row_standardized": moran_r, "binary": moran_b},
+        "referencia_moran": {"I_aprox": ref_i, "p_sim": ref_p},
+        "pendencia_moran": (
+            "Recuperar do artefato computacional histórico a transformação/normalização canônica "
+            "dos pesos antes de declarar reprodução numérica bit a bit."
+        ),
         "saidas": [
             str(gpkg_path.relative_to(paths.data_root)),
             str(parquet_path.relative_to(paths.data_root)),
@@ -186,9 +292,9 @@ def executar(raiz: Path) -> None:
         {
             "tipo": "etapa",
             "etapa": "09",
-            "status": "OK",
-            "universo_final": int(len(final)),
-            "moran_I": float(moran.I),
+            "status": qa["status"],
+            "universo_integrado": int(len(espacial)),
+            "universo_moran": int(len(moran_base)),
         },
     )
     print(json.dumps(qa, ensure_ascii=False, indent=2))
