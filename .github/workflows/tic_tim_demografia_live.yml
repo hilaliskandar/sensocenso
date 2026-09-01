@@ -9,6 +9,8 @@ on:
     paths:
       - '.github/workflows/tic_tim_demografia_live.yml'
       - 'subprojetos/tic_tim_demografia_habitacao/**'
+permissions:
+  contents: read
 jobs:
   live:
     runs-on: ubuntu-latest
