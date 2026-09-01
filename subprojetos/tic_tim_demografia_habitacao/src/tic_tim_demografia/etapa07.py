@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import urlparse
 
 import pandas as pd
 
@@ -60,6 +59,11 @@ def _combinar_familias(flags: pd.DataFrame, minimo: int) -> pd.DataFrame:
         },
         index=flags.index,
     )
+
+
+def _vetor_familias(linha: pd.Series, colunas: list[str]) -> str:
+    ativos = [c for c in colunas if pd.notna(linha[c]) and int(linha[c]) == 1]
+    return "+".join(ativos) if ativos else "nenhuma"
 
 
 def _crescimento(v0: float, v1: float, rotulo: str) -> float:
@@ -308,8 +312,7 @@ def executar(raiz: Path) -> None:
     for coluna in combinacao.columns:
         base[coluna] = combinacao[coluna]
     base["VETOR_FAMILIAS"] = familias.apply(
-        lambda r: "+".join(c for c in familias.columns if r[c] == 1) or "nenhuma",
-        axis=1,
+        lambda r: _vetor_familias(r, list(familias.columns)), axis=1
     )
 
     out_dir = paths.processed / "setorial"
