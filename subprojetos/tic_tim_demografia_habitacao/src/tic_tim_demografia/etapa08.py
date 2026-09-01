@@ -36,6 +36,10 @@ def _vetor(linha: pd.Series, colunas: list[str]) -> str:
     return "+".join(ativos) if ativos else "nenhuma"
 
 
+def _normalizar_vetor_p80(valor: str) -> str:
+    return str(valor).replace("_P80", "")
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     paths = resolve_paths(raiz)
@@ -44,6 +48,8 @@ def executar(raiz: Path) -> None:
     parametros = carregar_parametros(raiz / "config/parametros.yml")
     q = float(parametros["territorializacao"]["percentil_sensibilidade"])
     minimo = int(parametros["territorializacao"]["minimo_familias_convergencia"])
+    qa_ref = parametros.get("qa_referencia", {})
+    esperado_integrado = int(qa_ref.get("setores_universo_final", 8073))
 
     entrada = paths.processed / "setorial" / "base_familias_analiticas_p75.parquet"
     if not entrada.exists():
@@ -51,25 +57,33 @@ def executar(raiz: Path) -> None:
     base = pd.read_parquet(entrada)
     if len(base) != 9087 or base["codigo_setor"].astype("string").duplicated().any():
         raise AssertionError("Etapa 08 exige a base P75 de 9.087 setores urbanos únicos.")
+    if "FLAG_UNIVERSO_INTEGRADO" not in base.columns:
+        raise AssertionError("Base P75 não contém o gate explícito do universo integrado.")
+    if int(base["FLAG_UNIVERSO_INTEGRADO"].sum()) != esperado_integrado:
+        raise AssertionError(
+            "Universo integrado recebido pela etapa 08 divergiu: "
+            f"{int(base['FLAG_UNIVERSO_INTEGRADO'].sum())} != {esperado_integrado}"
+        )
 
     contexto = _contexto_unico(base)
+    integrado = base.loc[base["FLAG_UNIVERSO_INTEGRADO"]].copy()
     limiares = {
         "crescimento_dpo": _limiar(contexto["cres_dpo_2010_2022"], q, "crescimento DPO P80"),
         "divergencia_dpo_pop": _limiar(
             contexto["diverg_dpo_pop_2010_2022"], q, "divergência DPO-população P80"
         ),
-        "cwr": _limiar(base["cwr_0_4_por_1000_m1549"], q, "CWR P80"),
-        "privacao": _limiar(base["PRIV_C3"], q, "privação P80"),
+        "cwr": _limiar(integrado["cwr_0_4_por_1000_m1549"], q, "CWR P80"),
+        "privacao": _limiar(integrado["PRIV_C3"], q, "privação P80"),
         "re_60_0_14": _limiar(contexto["re_2022"], q, "razão de envelhecimento P80"),
         "unipessoais": _limiar(contexto["pct_unipessoais_2022"], q, "unipessoais P80"),
         "resp_mulher_sem_conjuge": _limiar(
-            base["pct_sem_conjuge_resp_mulher_2022"], q, "responsável mulher sem cônjuge P80"
+            integrado["pct_sem_conjuge_resp_mulher_2022"], q, "responsável mulher sem cônjuge P80"
         ),
-        "sem_bueiro": _limiar(base["sem_bueiro"], q, "sem bueiro P80"),
-        "sem_calcada": _limiar(base["sem_calcada"], q, "sem calçada P80"),
-        "sem_pavimentacao": _limiar(base["sem_pavimentacao"], q, "sem pavimentação P80"),
-        "sem_iluminacao": _limiar(base["sem_iluminacao"], q, "sem iluminação P80"),
-        "sem_arvores": _limiar(base["sem_arvores"], q, "sem árvores P80"),
+        "sem_bueiro": _limiar(integrado["sem_bueiro"], q, "sem bueiro P80"),
+        "sem_calcada": _limiar(integrado["sem_calcada"], q, "sem calçada P80"),
+        "sem_pavimentacao": _limiar(integrado["sem_pavimentacao"], q, "sem pavimentação P80"),
+        "sem_iluminacao": _limiar(integrado["sem_iluminacao"], q, "sem iluminação P80"),
+        "sem_arvores": _limiar(integrado["sem_arvores"], q, "sem árvores P80"),
     }
 
     base["F1_CTX_CRES_DPO_P80"] = _flag_limiar(
@@ -90,9 +104,7 @@ def executar(raiz: Path) -> None:
     for var in F3_VARIAVEIS:
         nome = var.removeprefix("sem_").upper()
         coluna = f"F3_LOCAL_SEM_{nome}_P80"
-        base[coluna] = _flag_limiar(
-            base[var], limiares[var], zero_estrito=True
-        )
+        base[coluna] = _flag_limiar(base[var], limiares[var], zero_estrito=True)
         f3_flags.append(coluna)
     f3_tab = base[f3_flags]
     base["F3_N_COMPONENTES_OBS_P80"] = f3_tab.notna().sum(axis=1).astype("Int64")
@@ -119,9 +131,7 @@ def executar(raiz: Path) -> None:
     base["N_FAMILIAS_SINAL_P80"] = comb80["N_FAMILIAS_SINAL"]
     base["N_FAMILIAS_OBSERVADAS_P80"] = comb80["N_FAMILIAS_OBSERVADAS"]
     base["CONVERGENCIA_3_OU_4_P80"] = comb80["CONVERGENCIA_3_OU_4"]
-    base["VETOR_FAMILIAS_P80"] = base[fam80_cols].apply(
-        lambda r: _vetor(r, fam80_cols), axis=1
-    )
+    base["VETOR_FAMILIAS_P80"] = base[fam80_cols].apply(lambda r: _vetor(r, fam80_cols), axis=1)
 
     base["PERSISTENTE_P75_P80"] = pd.Series(pd.NA, index=base.index, dtype="Int64")
     conhecidos = base["CONVERGENCIA_3_OU_4"].notna() & base["CONVERGENCIA_3_OU_4_P80"].notna()
@@ -132,12 +142,37 @@ def executar(raiz: Path) -> None:
 
     p75_cols = ["F1", "F2", "F3", "F4"]
     base["VETOR_FAMILIAS_P75"] = base[p75_cols].apply(lambda r: _vetor(r, p75_cols), axis=1)
-    base["MESMO_VETOR_P75_P80"] = pd.Series(pd.NA, index=base.index, dtype="Int64")
-    completos = base[p75_cols + fam80_cols].notna().all(axis=1)
-    base.loc[completos, "MESMO_VETOR_P75_P80"] = (
-        base.loc[completos, "VETOR_FAMILIAS_P75"].str.replace("_P80", "", regex=False)
-        == base.loc[completos, "VETOR_FAMILIAS_P80"].str.replace("_P80", "", regex=False)
-    ).astype("int64")
+    base["MESMO_VETOR_P75_P80"] = (
+        base["VETOR_FAMILIAS_P75"]
+        == base["VETOR_FAMILIAS_P80"].map(_normalizar_vetor_p80)
+    ).astype("Int64")
+
+    integrado = base.loc[base["FLAG_UNIVERSO_INTEGRADO"]].copy()
+    converg_p75 = int(integrado["CONVERGENCIA_3_OU_4"].eq(1).sum())
+    esperado_p75 = int(qa_ref.get("setores_convergentes_p75", 1255))
+    if converg_p75 != esperado_p75:
+        raise AssertionError(f"Gate P75 recebido pela etapa 08 divergiu: {converg_p75} != {esperado_p75}")
+
+    persistentes = int(integrado["PERSISTENTE_P75_P80"].eq(1).sum())
+    esperado_persistentes = int(qa_ref.get("setores_persistentes_p80", 959))
+    if persistentes != esperado_persistentes:
+        raise AssertionError(
+            "Persistência P75/P80 no universo integrado divergiu: "
+            f"{persistentes} != {esperado_persistentes}"
+        )
+
+    mesmo_vetor = int(
+        (
+            integrado["PERSISTENTE_P75_P80"].eq(1)
+            & integrado["MESMO_VETOR_P75_P80"].eq(1)
+        ).sum()
+    )
+    esperado_mesmo_vetor = int(qa_ref.get("setores_mesmo_vetor_p80", 886))
+    if mesmo_vetor != esperado_mesmo_vetor:
+        raise AssertionError(
+            "Estabilidade do vetor P75/P80 no universo integrado divergiu: "
+            f"{mesmo_vetor} != {esperado_mesmo_vetor}"
+        )
 
     out_dir = paths.processed / "setorial"
     csv_path = out_dir / "base_familias_sensibilidade_p75_p80.csv"
@@ -147,27 +182,25 @@ def executar(raiz: Path) -> None:
     registrar_arquivo(manifesto, csv_path, origem="Etapa 08 - sensibilidade P75/P80")
     registrar_arquivo(manifesto, parquet_path, origem="Etapa 08 - sensibilidade P75/P80")
 
-    qa_ref = parametros.get("qa_referencia", {})
     qa = {
         "status": "OK",
         "etapa": "08",
         "percentil_sensibilidade": q,
         "universo_base_setores": int(len(base)),
+        "universo_integrado": int(base["FLAG_UNIVERSO_INTEGRADO"].sum()),
         "limiares_p80": limiares,
-        "convergencia_p75_no_universo_amplo": int(base["CONVERGENCIA_3_OU_4"].eq(1).sum()),
-        "convergencia_p80_no_universo_amplo": int(base["CONVERGENCIA_3_OU_4_P80"].eq(1).sum()),
-        "persistentes_no_universo_amplo": int(base["PERSISTENTE_P75_P80"].eq(1).sum()),
-        "mesmo_vetor_no_universo_amplo": int(
-            (base["PERSISTENTE_P75_P80"].eq(1) & base["MESMO_VETOR_P75_P80"].eq(1)).sum()
-        ),
+        "convergencia_p75_integrada": converg_p75,
+        "convergencia_p80_integrada": int(integrado["CONVERGENCIA_3_OU_4_P80"].eq(1).sum()),
+        "persistentes_p75_p80_integrados": persistentes,
+        "mesmo_vetor_entre_persistentes": mesmo_vetor,
         "referencias_fechamento_8073": {
-            "setores_persistentes_p80": qa_ref.get("setores_persistentes_p80"),
-            "setores_mesmo_vetor_p80": qa_ref.get("setores_mesmo_vetor_p80"),
+            "setores_convergentes_p75": esperado_p75,
+            "setores_persistentes_p80": esperado_persistentes,
+            "setores_mesmo_vetor_p80": esperado_mesmo_vetor,
         },
-        "cautela": (
-            "As contagens desta etapa usam o universo urbano amplo de 9.087 setores. As referências "
-            "959/886 pertencem ao recorte integrado final de 8.073 setores e só devem ser testadas "
-            "como invariantes após a reprodução desse recorte na etapa espacial."
+        "regra": (
+            "percentis setoriais P80 calculados no mesmo universo integrado de 8.073 setores; "
+            "variáveis municipais continuam calculadas sobre os 30 municípios únicos"
         ),
         "saidas": [
             str(csv_path.relative_to(paths.data_root)),
@@ -179,6 +212,13 @@ def executar(raiz: Path) -> None:
     registrar_arquivo(manifesto, qa_path, origem="Etapa 08 - QA sensibilidade P75/P80")
     registrar_evento(
         manifesto,
-        {"tipo": "etapa", "etapa": "08", "status": "OK", "universo": int(len(base))},
+        {
+            "tipo": "etapa",
+            "etapa": "08",
+            "status": "OK",
+            "universo_integrado": esperado_integrado,
+            "persistentes": persistentes,
+            "mesmo_vetor": mesmo_vetor,
+        },
     )
     print(json.dumps(qa, ensure_ascii=False, indent=2))
