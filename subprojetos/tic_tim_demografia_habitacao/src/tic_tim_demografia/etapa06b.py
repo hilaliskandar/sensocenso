@@ -6,10 +6,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .etapa05c import _arquivo_por_url, _coluna, _ler_csv_zip, _numero, _preparar_setor, _proporcao, _validar_01
+from .etapa05c import (
+    _arquivo_por_url,
+    _coluna,
+    _ler_csv_zip,
+    _numero,
+    _preparar_setor,
+    _proporcao,
+    _validar_01,
+)
 from .paths import resolve_paths
 from .proveniencia import registrar_arquivo, registrar_evento
-
 
 UNIVERSOS = ("domicilios", "moradores", "faces")
 F3_ATRIBUTOS = (
@@ -25,6 +32,11 @@ TODOS_ATRIBUTOS = F3_ATRIBUTOS + (
     "ponto_onibus",
     "infraestrutura_cicloviaria",
 )
+CHAVES_SETORIAIS = {
+    "domicilios": ("CD_setor", "setor"),
+    "moradores": ("CD_setor", "setor"),
+    "faces": ("COD_SETOR_M22FINAL", "CD_setor", "setor"),
+}
 
 
 def _soma_completa(df: pd.DataFrame, codigos: list[str], rotulo: str) -> pd.Series:
@@ -98,7 +110,9 @@ def executar(raiz: Path) -> None:
     cobertura_fisica = {}
     for universo in UNIVERSOS:
         url = qa05b["arquivos_entorno"][universo]
-        fonte = _preparar_setor(_ler_csv_zip(_arquivo_por_url(raw_ent, url)), "CD_setor", "setor")
+        fonte = _preparar_setor(
+            _ler_csv_zip(_arquivo_por_url(raw_ent, url)), *CHAVES_SETORIAIS[universo]
+        )
         cobertura_fisica[universo] = int(fonte.index.isin(idx).sum())
         fonte = fonte.reindex(idx)
         for atributo in TODOS_ATRIBUTOS:
