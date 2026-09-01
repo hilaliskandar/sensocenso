@@ -22,7 +22,7 @@ if str(SRC) not in sys.path:
 from tic_tim_demografia import (  # noqa: E402
     etapa00, etapa01, etapa02, etapa02b, etapa02c, etapa03a, etapa03b, etapa03c,
     etapa04, etapa05a, etapa05b, etapa05c, etapa05d, etapa05e, etapa06a, etapa06b,
-    etapa07, etapa08,
+    etapa07, etapa08, etapa09,
 )
 
 @dataclass(frozen=True)
@@ -58,7 +58,7 @@ ETAPAS = [
     Etapa("06b", "atributos setoriais do entorno e F3", etapa06b.executar),
     Etapa("07", "quatro famílias analíticas no corte P75", etapa07.executar),
     Etapa("08", "sensibilidade P75/P80", etapa08.executar),
-    Etapa("09", "validação espacial", ainda_nao_implementada("validação espacial"), False),
+    Etapa("09", "validação espacial Queen e Moran", etapa09.executar),
     Etapa("10", "sínteses municipais", ainda_nao_implementada("sínteses municipais"), False),
     Etapa("11", "tabelas e mapas", ainda_nao_implementada("tabelas e mapas"), False),
     Etapa("12", "QA final", ainda_nao_implementada("QA final"), False),
