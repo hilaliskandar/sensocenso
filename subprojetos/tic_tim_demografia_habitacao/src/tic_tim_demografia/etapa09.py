@@ -89,6 +89,7 @@ def _diagnostico_cobertura(base: pd.DataFrame) -> dict[str, int]:
         "n_c3_pop_dppo": int((c3 & pop & dppo).sum()),
         "n_pop": int(pop.sum()),
         "n_dppo": int(dppo.sum()),
+        "n_flag_integrado": int(base["FLAG_UNIVERSO_INTEGRADO"].sum()),
     }
 
 
@@ -136,21 +137,17 @@ def executar(raiz: Path) -> None:
     permutacoes = int(parametros["espacial"]["permutacoes_moran"])
 
     entrada = paths.processed / "setorial" / "base_familias_sensibilidade_p75_p80.parquet"
-    exposicao_path = paths.processed / "setorial" / "base_isau_priorizacao_2022.parquet"
-    for path in (entrada, exposicao_path):
-        if not path.exists():
-            raise FileNotFoundError(f"Pré-requisito 09 ausente: {path}")
+    if not entrada.exists():
+        raise FileNotFoundError(f"Pré-requisito 09 ausente: {entrada}")
 
     base = pd.read_parquet(entrada)
     base["codigo_setor"] = base["codigo_setor"].astype("string").str.strip()
     if base["codigo_setor"].duplicated().any():
         raise AssertionError("Base analítica possui CD_SETOR duplicado antes da validação espacial.")
-
-    exposicao = pd.read_parquet(exposicao_path)[["codigo_setor", "POP_TOTAL", "DPPO"]].copy()
-    exposicao["codigo_setor"] = exposicao["codigo_setor"].astype("string").str.strip()
-    if exposicao["codigo_setor"].duplicated().any():
-        raise AssertionError("Base de exposição 05e possui CD_SETOR duplicado.")
-    base = base.merge(exposicao, on="codigo_setor", how="left", validate="one_to_one")
+    obrigatorias = ["PRIV_C3", "POP_TOTAL", "DPPO", "FLAG_UNIVERSO_INTEGRADO", "codigo_ibge"]
+    faltantes = [c for c in obrigatorias if c not in base.columns]
+    if faltantes:
+        raise ValueError(f"Base 08 sem colunas necessárias à validação espacial: {faltantes}")
 
     diagnostico = _diagnostico_cobertura(base)
     if diagnostico["n_c3"] != EXPECTED_C3:
@@ -158,23 +155,21 @@ def executar(raiz: Path) -> None:
             "Universo C3 divergiu do fechamento metodológico: "
             f"{diagnostico['n_c3']} != {EXPECTED_C3}"
         )
-
-    # Gate de compatibilidade temática do universo integrado. Esta hipótese é
-    # explicitamente testada contra a referência auditada: C3 observável +
-    # exposição populacional + domicílios ocupados observáveis. Se não fechar
-    # exatamente em 8.073, a execução para com o diagnóstico e NÃO remove casos
-    # arbitrariamente para alcançar a contagem histórica.
-    integrado = base.loc[
-        base["PRIV_C3"].notna()
-        & base["POP_TOTAL"].notna()
-        & base["DPPO"].notna()
-    ].copy()
-    if len(integrado) != EXPECTED_INTEGRATED:
+    if diagnostico["n_flag_integrado"] != EXPECTED_INTEGRATED:
         raise AssertionError(
-            "Hipótese executável do universo integrado não reproduziu 8.073 setores. "
-            f"diagnostico={diagnostico}. É necessário recuperar o gate histórico de "
-            "compatibilidade temática; não ajustar a amostra manualmente."
+            "Gate integrado recebido da etapa 07/08 divergiu: "
+            f"{diagnostico['n_flag_integrado']} != {EXPECTED_INTEGRATED}"
         )
+
+    gate_recalculado = base["PRIV_C3"].notna() & base["POP_TOTAL"].notna() & base["DPPO"].notna()
+    flag = base["FLAG_UNIVERSO_INTEGRADO"].astype(bool)
+    diverg_gate = int((gate_recalculado != flag).sum())
+    if diverg_gate:
+        raise AssertionError(
+            "FLAG_UNIVERSO_INTEGRADO diverge do gate temático reproduzido em 09: "
+            f"{diverg_gate} setores"
+        )
+    integrado = base.loc[flag].copy()
 
     raw_dir = paths.raw / "ibge" / "censo2022" / "malha_setores"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -230,9 +225,7 @@ def executar(raiz: Path) -> None:
     pd.DataFrame({"codigo_setor": ilhas}).to_csv(ilhas_path, index=False, encoding="utf-8")
     registrar_arquivo(manifesto, ilhas_path, origem="Etapa 09 - ilhas Queen no universo integrado")
 
-    moran_base = espacial.loc[
-        ~espacial["codigo_setor"].astype(str).isin(ilhas)
-    ].copy()
+    moran_base = espacial.loc[~espacial["codigo_setor"].astype(str).isin(ilhas)].copy()
     if len(moran_base) != EXPECTED_MORAN_N:
         raise AssertionError(
             f"Universo do Moran não fechou: {len(moran_base)} != {EXPECTED_MORAN_N}"
@@ -240,9 +233,7 @@ def executar(raiz: Path) -> None:
 
     # O caderno preserva o valor de referência, mas registra que a transformação
     # canônica da matriz de pesos deve ser recuperada do artefato computacional
-    # original, não inferida retrospectivamente. Por isso são calculadas e
-    # registradas as especificações R e B; nenhuma é promovida a canônica apenas
-    # por proximidade numérica com o resultado histórico.
+    # original, não inferida retrospectivamente. Calculam-se R e B como diagnóstico.
     seed = 20260830
     moran_r = _moran_por_transformacao(moran_base, "r", permutacoes, seed=seed)
     moran_b = _moran_por_transformacao(moran_base, "b", permutacoes, seed=seed)
@@ -266,10 +257,9 @@ def executar(raiz: Path) -> None:
         "etapa": "09",
         "fonte_malha": MALHA_SP_URL,
         "crs_malha": str(espacial.crs),
-        "gate_compatibilidade_tematica": (
-            "PRIV_C3, POP_TOTAL e DPPO simultaneamente observáveis; gate aceito somente se reproduzir 8.073"
-        ),
+        "gate_compatibilidade_tematica": "PRIV_C3, POP_TOTAL e DPPO simultaneamente observáveis",
         "diagnostico_cobertura": diagnostico,
+        "divergencias_gate_07_09": diverg_gate,
         "invariantes_topologicos": invariantes,
         "universo_moran": int(len(moran_base)),
         "moran_candidatos": {"row_standardized": moran_r, "binary": moran_b},
