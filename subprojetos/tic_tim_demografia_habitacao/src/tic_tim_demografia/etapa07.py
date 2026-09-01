@@ -186,12 +186,15 @@ def executar(raiz: Path) -> None:
     parametros = carregar_parametros(raiz / "config/parametros.yml")
     q = float(parametros["territorializacao"]["percentil_principal"])
     minimo = int(parametros["territorializacao"]["minimo_familias_convergencia"])
+    qa_ref = parametros.get("qa_referencia", {})
+    esperado_integrado = int(qa_ref.get("setores_universo_final", 8073))
 
     arquivos = {
         "longitudinal": paths.processed / "municipal" / "base_longitudinal_2000_2010_2022.parquet",
         "domicilios": paths.processed / "municipal" / "base_domiciliar_2000_2010_2022.parquet",
         "cwr": paths.processed / "setorial" / "base_renovacao_demografica_2022.parquet",
         "isau": paths.processed / "setorial" / "base_isau_2022.parquet",
+        "exposicao": paths.processed / "setorial" / "base_isau_priorizacao_2022.parquet",
         "entorno": paths.processed / "setorial" / "base_entorno_urbano_2022.parquet",
         "qa05b": paths.qa / "etapa05b_inspecao_fontes_isau.json",
     }
@@ -203,6 +206,7 @@ def executar(raiz: Path) -> None:
     domicilios = pd.read_parquet(arquivos["domicilios"])
     cwr = pd.read_parquet(arquivos["cwr"])
     isau = pd.read_parquet(arquivos["isau"])
+    exposicao = pd.read_parquet(arquivos["exposicao"])
     entorno = pd.read_parquet(arquivos["entorno"])
 
     base = isau.copy()
@@ -213,14 +217,28 @@ def executar(raiz: Path) -> None:
 
     cwr_cols = ["codigo_setor", "cwr_0_4_por_1000_m1549"]
     entorno_cols = ["codigo_setor", "F3_ENTORNO_ALTO"] + list(F3_COLUNAS.values())
+    expo_cols = ["codigo_setor", "POP_TOTAL", "DPPO"]
     base = base.merge(cwr[cwr_cols], on="codigo_setor", how="left", validate="one_to_one")
+    base = base.merge(exposicao[expo_cols], on="codigo_setor", how="left", validate="one_to_one")
     base = base.merge(entorno[entorno_cols], on="codigo_setor", how="left", validate="one_to_one")
+
+    # O universo integrado do fechamento combina observabilidade C3 e exposição
+    # populacional/domiciliar. Os percentis setoriais da territorialização são
+    # calculados nesse universo; ausências das demais dimensões permanecem NA.
+    base["FLAG_UNIVERSO_INTEGRADO"] = (
+        base["PRIV_C3"].notna() & base["POP_TOTAL"].notna() & base["DPPO"].notna()
+    )
+    if int(base["FLAG_UNIVERSO_INTEGRADO"].sum()) != esperado_integrado:
+        raise AssertionError(
+            "Gate do universo integrado não reproduziu o fechamento: "
+            f"{int(base['FLAG_UNIVERSO_INTEGRADO'].sum())} != {esperado_integrado}. "
+            "Não recortar manualmente; investigar cobertura e joins."
+        )
 
     qa05b = json.loads(arquivos["qa05b"].read_text(encoding="utf-8"))
     raw_dom = paths.raw / "ibge" / "censo2022" / "isau" / "domicilios"
     arranjo_path, arranjo_url = _selecionar_arranjo(qa05b, raw_dom)
-    arranjo = _arranjo_setorial(arranjo_path, indice)
-    arranjo = arranjo.reset_index()
+    arranjo = _arranjo_setorial(arranjo_path, indice).reset_index()
     base = base.merge(arranjo, on="codigo_setor", how="left", validate="one_to_one")
 
     contexto = _contexto_municipal(longitudinal, domicilios)
@@ -235,24 +253,25 @@ def executar(raiz: Path) -> None:
     base["sem_pavimentacao"] = base[F3_COLUNAS["pavimentacao"]] / 100.0
     base["sem_iluminacao"] = base[F3_COLUNAS["iluminacao"]] / 100.0
     base["sem_arvores"] = base[F3_COLUNAS["arvores"]] / 100.0
+    integrado = base.loc[base["FLAG_UNIVERSO_INTEGRADO"]].copy()
 
     limiares = {
         "crescimento_dpo": _limiar(contexto["cres_dpo_2010_2022"], q, "crescimento DPO"),
         "divergencia_dpo_pop": _limiar(
             contexto["diverg_dpo_pop_2010_2022"], q, "divergência DPO-população"
         ),
-        "cwr": _limiar(base["cwr_0_4_por_1000_m1549"], q, "CWR"),
-        "privacao": _limiar(base["PRIV_C3"], q, "privação ISAU"),
+        "cwr": _limiar(integrado["cwr_0_4_por_1000_m1549"], q, "CWR"),
+        "privacao": _limiar(integrado["PRIV_C3"], q, "privação ISAU"),
         "re_60_0_14": _limiar(contexto["re_2022"], q, "razão de envelhecimento"),
         "unipessoais": _limiar(contexto["pct_unipessoais_2022"], q, "unipessoais"),
         "resp_mulher_sem_conjuge": _limiar(
-            base["pct_sem_conjuge_resp_mulher_2022"], q, "responsável mulher sem cônjuge"
+            integrado["pct_sem_conjuge_resp_mulher_2022"], q, "responsável mulher sem cônjuge"
         ),
-        "sem_bueiro": _limiar(base["sem_bueiro"], q, "sem bueiro"),
-        "sem_calcada": _limiar(base["sem_calcada"], q, "sem calçada"),
-        "sem_pavimentacao": _limiar(base["sem_pavimentacao"], q, "sem pavimentação"),
-        "sem_iluminacao": _limiar(base["sem_iluminacao"], q, "sem iluminação"),
-        "sem_arvores": _limiar(base["sem_arvores"], q, "sem árvores"),
+        "sem_bueiro": _limiar(integrado["sem_bueiro"], q, "sem bueiro"),
+        "sem_calcada": _limiar(integrado["sem_calcada"], q, "sem calçada"),
+        "sem_pavimentacao": _limiar(integrado["sem_pavimentacao"], q, "sem pavimentação"),
+        "sem_iluminacao": _limiar(integrado["sem_iluminacao"], q, "sem iluminação"),
+        "sem_arvores": _limiar(integrado["sem_arvores"], q, "sem árvores"),
     }
 
     base["F1_CTX_CRES_DPO_P75"] = _flag_limiar(
@@ -271,12 +290,9 @@ def executar(raiz: Path) -> None:
 
     f3_flags = []
     for nome in ("bueiro", "calcada", "pavimentacao", "iluminacao", "arvores"):
-        serie = base[f"sem_{nome}"]
         coluna = f"F3_LOCAL_SEM_{nome.upper()}_P75"
         base[coluna] = _flag_limiar(
-            serie,
-            limiares[f"sem_{nome}"],
-            zero_estrito=True,
+            base[f"sem_{nome}"], limiares[f"sem_{nome}"], zero_estrito=True
         )
         f3_flags.append(coluna)
     f3_tab = base[f3_flags]
@@ -293,8 +309,6 @@ def executar(raiz: Path) -> None:
             base.loc[comparavel_f3, "F3_ENTORNO_ALTO"].astype(int)
         ).sum()
     )
-    if diverg_f3:
-        raise AssertionError(f"Etapa 07 divergiu da classificação F3 já auditada em 06b: {diverg_f3}")
 
     base["F4_CTX_RE_P75"] = _flag_limiar(base["re_2022"], limiares["re_60_0_14"])
     base["F4_CTX_UNIP_P75"] = _flag_limiar(
@@ -312,8 +326,59 @@ def executar(raiz: Path) -> None:
     for coluna in combinacao.columns:
         base[coluna] = combinacao[coluna]
     base["VETOR_FAMILIAS"] = familias.apply(
-        lambda r: _vetor_familias(r, list(familias.columns)), axis=1
+        lambda r: _vetor_familias(r, ["F1", "F2", "F3", "F4"]), axis=1
     )
+
+    integrado = base.loc[base["FLAG_UNIVERSO_INTEGRADO"]].copy()
+    cobertura_integrada = {
+        "cwr": int(integrado["cwr_0_4_por_1000_m1549"].notna().sum()),
+        "privacao": int(integrado["PRIV_C3"].notna().sum()),
+        "entorno_5_componentes": int(integrado["F3"].notna().sum()),
+        "resp_mulher_sem_conjuge": int(
+            integrado["pct_sem_conjuge_resp_mulher_2022"].notna().sum()
+        ),
+    }
+    esperados_cobertura = {
+        "cwr": 7474,
+        "privacao": 8073,
+        "entorno_5_componentes": 8052,
+        "resp_mulher_sem_conjuge": 7983,
+    }
+    diverg_cobertura = {
+        k: {"observado": cobertura_integrada[k], "esperado": v}
+        for k, v in esperados_cobertura.items()
+        if cobertura_integrada[k] != v
+    }
+    if diverg_cobertura:
+        raise AssertionError(f"Coberturas do universo integrado divergiram: {diverg_cobertura}")
+
+    contagens_componentes = {
+        "cwr_p75": int(integrado["F1_LOCAL_CWR_P75"].eq(1).sum()),
+        "privacao_p75": int(integrado["F2"].eq(1).sum()),
+        "entorno_f3_p75": int(integrado["F3"].eq(1).sum()),
+        "resp_mulher_p75": int(integrado["F4_LOCAL_RESP_MULHER_P75"].eq(1).sum()),
+    }
+    esperados_componentes = {
+        "cwr_p75": 1870,
+        "privacao_p75": 2019,
+        "entorno_f3_p75": 2014,
+        "resp_mulher_p75": 1998,
+    }
+    diverg_componentes = {
+        k: {"observado": contagens_componentes[k], "esperado": v}
+        for k, v in esperados_componentes.items()
+        if contagens_componentes[k] != v
+    }
+    if diverg_componentes:
+        raise AssertionError(f"Contagens P75 do fechamento divergiram: {diverg_componentes}")
+
+    convergencia_integrada = int(integrado["CONVERGENCIA_3_OU_4"].eq(1).sum())
+    esperado_convergencia = int(qa_ref.get("setores_convergentes_p75", 1255))
+    if convergencia_integrada != esperado_convergencia:
+        raise AssertionError(
+            "Convergência P75 no universo integrado divergiu do fechamento: "
+            f"{convergencia_integrada} != {esperado_convergencia}"
+        )
 
     out_dir = paths.processed / "setorial"
     csv_path = out_dir / "base_familias_analiticas_p75.csv"
@@ -323,39 +388,25 @@ def executar(raiz: Path) -> None:
     registrar_arquivo(manifesto, csv_path, origem="Etapa 07 - quatro famílias analíticas P75")
     registrar_arquivo(manifesto, parquet_path, origem="Etapa 07 - quatro famílias analíticas P75")
 
-    referencias = parametros.get("qa_referencia", {}).get("limiares_p75", {})
+    referencias = qa_ref.get("limiares_p75", {})
     qa = {
         "status": "OK",
         "etapa": "07",
         "universo_base_setores": int(len(base)),
-        "observacao_universo_final": (
-            "A etapa 07 preserva os 9.087 setores urbanos e a incerteza por indicador. "
-            "O recorte espacial final de 8.073 setores será reproduzido na etapa 09; "
-            "não é antecipado artificialmente nesta etapa."
-        ),
+        "universo_integrado": int(base["FLAG_UNIVERSO_INTEGRADO"].sum()),
+        "regra_universo_integrado": "PRIV_C3, POP_TOTAL e DPPO observáveis",
         "percentil": q,
         "minimo_familias_convergencia": minimo,
         "fonte_arranjo": {"arquivo": arranjo_path.name, "url": arranjo_url},
         "formula_arranjo": "V01188 / V01179 quando ambos publicados e V01179 > 0",
         "limiares": limiares,
         "comparacao_limiares_caderno": _comparar_referencias(limiares, referencias),
-        "cobertura": {
-            "cwr": int(base["cwr_0_4_por_1000_m1549"].notna().sum()),
-            "privacao": int(base["PRIV_C3"].notna().sum()),
-            "entorno_5_componentes": int(base["F3"].notna().sum()),
-            "resp_mulher_sem_conjuge": int(
-                base["pct_sem_conjuge_resp_mulher_2022"].notna().sum()
-            ),
-            "quatro_familias_observadas": int(base["N_FAMILIAS_OBSERVADAS"].eq(4).sum()),
+        "cobertura_integrada": cobertura_integrada,
+        "contagens_componentes_integradas": contagens_componentes,
+        "familias_sinalizadas_integradas": {
+            f: int(integrado[f].eq(1).sum()) for f in ("F1", "F2", "F3", "F4")
         },
-        "familias_sinalizadas": {
-            f: int(base[f].eq(1).sum()) for f in ("F1", "F2", "F3", "F4")
-        },
-        "convergencia": {
-            "sinalizada": int(base["CONVERGENCIA_3_OU_4"].eq(1).sum()),
-            "nao_sinalizada": int(base["CONVERGENCIA_3_OU_4"].eq(0).sum()),
-            "indeterminada_por_cobertura": int(base["CONVERGENCIA_3_OU_4"].isna().sum()),
-        },
+        "convergencia_integrada": convergencia_integrada,
         "qa_f3_divergencias_com_06b": diverg_f3,
         "politica_ausencias": (
             "ausência/sigilo permanece NA; família é 1 se algum componente observado é 1, "
@@ -375,6 +426,13 @@ def executar(raiz: Path) -> None:
     registrar_arquivo(manifesto, qa_path, origem="Etapa 07 - QA quatro famílias P75")
     registrar_evento(
         manifesto,
-        {"tipo": "etapa", "etapa": "07", "status": "OK", "universo": int(len(base))},
+        {
+            "tipo": "etapa",
+            "etapa": "07",
+            "status": "OK",
+            "universo": int(len(base)),
+            "universo_integrado": esperado_integrado,
+            "convergencia_p75": convergencia_integrada,
+        },
     )
     print(json.dumps(qa, ensure_ascii=False, indent=2))
