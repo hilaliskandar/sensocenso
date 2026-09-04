@@ -1,0 +1,21 @@
+{
+  "arquivo": "TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.csv",
+  "arquivo_versionado": "TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.csv.gz",
+  "checkpoint_id": "Gate18G7F2",
+  "colunas": [
+    "codigo_setor",
+    "macrotipo_checkpoint"
+  ],
+  "fonte_materializacao": "TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx::19_G7F2_SETORIAL",
+  "fonte_drive_id": "1QdVlkhE5P2dtiTInSIDGiLHFj1VJACaW1705ta53oS0",
+  "macro_composicao": {
+    "2": 3568,
+    "3": 3843,
+    "4": 662
+  },
+  "n_setores": 8073,
+  "regra_selecao": "MACRO_FINAL in {2,3,4} AND ISAU_C3 not null",
+  "schema_version": 1,
+  "sha256_csv": "72d6490f46c4cef588e2fed7935c69d4d1673c563546f96dfb7683475b13fd6f",
+  "sha256_payload_gzip": "0254ed2de341229948ad65faac561e94c1a28f07d1d64a49a3370403d4e8d56a"
+}
