@@ -57,6 +57,12 @@ jobs:
                   '1oN3aMhOi4gT-hHyDEuabrk8drE-LBt4gtQwQxUwXdng',
                   'TIC_TIM_PADROES_RECORRENTES_4_FAMILIAS_CENSITARIAS_v1.xlsx',
               ),
+              (
+                  'g13_downstream',
+                  'Gate18G13 derivado auditado com MACRO_FINAL e ISAU_C3',
+                  '1zzDNKOvZggG_KKPXJkhbk61VSB5WPziG9UwdSYgac4E',
+                  'TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.xlsx',
+              ),
           ]
           resumo = []
           for chave, nome, sheet_id, filename in sheets:
@@ -88,6 +94,48 @@ jobs:
           (diagnosticos / 'downloads_planilhas_resumo.json').write_text(
               json.dumps(resumo, ensure_ascii=False, indent=2), encoding='utf-8'
           )
+          PY
+      - name: Tenta Gate18G13 por endpoint GViz CSV
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          root = Path('/tmp/g7f2_materializacao')
+          fontes = root / 'fontes'
+          diagnosticos = root / 'diagnosticos'
+          sheet_id = '1zzDNKOvZggG_KKPXJkhbk61VSB5WPziG9UwdSYgac4E'
+          url = (
+              f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq'
+              '?tqx=out:csv&sheet=02_BASE_SETORIAL'
+          )
+          meta = {'chave': 'g13_gviz_csv', 'sheet_id': sheet_id, 'url': url}
+          try:
+              r = requests.get(url, timeout=180, allow_redirects=True)
+              texto = r.text
+              meta.update({
+                  'status_code': r.status_code,
+                  'url_final': r.url,
+                  'content_type': r.headers.get('content-type'),
+                  'bytes': len(r.content),
+                  'prefixo': texto[:300],
+              })
+              cabecalho_ok = 'CD_SETOR' in texto[:2000] and 'MACRO_FINAL' in texto[:2000] and 'ISAU_C3' in texto[:2000]
+              if r.ok and cabecalho_ok:
+                  destino = fontes / 'TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.csv'
+                  destino.write_text(texto, encoding='utf-8')
+                  meta.update({'status': 'ok', 'arquivo': destino.name})
+              else:
+                  meta['status'] = 'erro'
+                  meta['cabecalho_semantico_ok'] = cabecalho_ok
+          except Exception as exc:
+              meta.update({'status': 'erro', 'erro_tipo': type(exc).__name__, 'erro': str(exc)})
+          (diagnosticos / 'download_g13_gviz_csv.json').write_text(
+              json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          print(json.dumps(meta, ensure_ascii=False, indent=2))
           PY
       - name: Recupera GeoPackages historicos e derivados auditados
         shell: bash
@@ -138,6 +186,23 @@ jobs:
                                   'colunas': cols,
                               })
                       item['candidatos_setor'] = cand
+                  elif p.suffix.lower() == '.csv':
+                      df = pd.read_csv(p, dtype='string')
+                      cols = [str(c) for c in df.columns]
+                      ncols = {norm(c): c for c in cols}
+                      setor_cols = [orig for n, orig in ncols.items() if n in aliases_setor]
+                      item['colunas'] = cols
+                      item['linhas'] = len(df)
+                      if setor_cols:
+                          s = df[setor_cols[0]].astype('string').str.replace(r'\\.0$', '', regex=True).str.strip()
+                          valido = s.str.fullmatch(r'\\d{15}', na=False)
+                          item['candidatos_setor'] = [{
+                              'coluna_setor': setor_cols[0],
+                              'linhas': len(df),
+                              'setores_validos_15d': int(valido.sum()),
+                              'setores_unicos_15d': int(s[valido].nunique()),
+                              'colunas': cols,
+                          }]
                   elif p.suffix.lower() == '.gpkg':
                       import geopandas as gpd
                       import fiona
@@ -177,7 +242,9 @@ jobs:
           for f in \
             /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx \
             /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg \
-            /tmp/g7f2_materializacao/fontes/TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSIDADES_CENSITARIAS_v1.gpkg \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.csv \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.xlsx \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSITADES_CENSITARIAS_v1.gpkg \
             /tmp/g7f2_materializacao/fontes/TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSIDADES_CENSITARIAS_v1.xlsx \
             /tmp/g7f2_materializacao/fontes/TIC_TIM_PADROES_RECORRENTES_4_FAMILIAS_CENSITARIAS_v1.xlsx
           do
