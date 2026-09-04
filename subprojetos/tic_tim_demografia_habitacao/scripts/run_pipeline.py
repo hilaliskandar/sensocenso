@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Orquestrador do pipeline TIC–TIM de demografia e habitação.
 
-As etapas são implementadas incrementalmente. Nas etapas 07–09 existem dois
-modos explícitos: ``corrente`` usa fontes públicas atuais com checkpoint
-territorial histórico imutável e registra deriva de edição; ``historico``
-mantém os gates numéricos rígidos do fechamento original.
+As etapas são implementadas incrementalmente. Nas etapas 07–10 existem modos
+explícitos: ``corrente`` usa fontes públicas atuais com checkpoint territorial
+histórico imutável quando necessário e registra deriva de edição;
+``historico`` mantém os gates numéricos rígidos do fechamento original.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from tic_tim_demografia import (  # noqa: E402
     etapa00, etapa01, etapa02, etapa02b, etapa02c, etapa03a, etapa03b, etapa03c,
     etapa04, etapa05a, etapa05b, etapa05c, etapa05d, etapa05e, etapa06a, etapa06b,
     etapa07, etapa07_corrente, etapa08, etapa08_corrente, etapa09, etapa09_corrente,
+    etapa10_corrente,
 )
 
 
@@ -62,7 +63,6 @@ ETAPAS_BASE = [
     Etapa("06b", "atributos setoriais do entorno e F3", etapa06b.executar),
 ]
 ETAPAS_FINAIS = [
-    Etapa("10", "sínteses municipais", ainda_nao_implementada("sínteses municipais"), False),
     Etapa("11", "tabelas e mapas", ainda_nao_implementada("tabelas e mapas"), False),
     Etapa("12", "QA final", ainda_nao_implementada("QA final"), False),
 ]
@@ -74,12 +74,19 @@ def etapas_para_modo(modo: str) -> list[Etapa]:
             Etapa("07", "quatro famílias analíticas P75 — regressão histórica", etapa07.executar),
             Etapa("08", "sensibilidade P75/P80 — regressão histórica", etapa08.executar),
             Etapa("09", "validação espacial — regressão histórica", etapa09.executar),
+            Etapa(
+                "10",
+                "sínteses municipais — regressão histórica",
+                ainda_nao_implementada("sínteses municipais — regressão histórica"),
+                False,
+            ),
         ]
     else:
         analiticas = [
             Etapa("07", "quatro famílias P75 — fontes correntes + checkpoint histórico", etapa07_corrente.executar),
             Etapa("08", "sensibilidade P75/P80 — fontes correntes + checkpoint histórico", etapa08_corrente.executar),
             Etapa("09", "validação espacial — fontes correntes + checkpoint histórico", etapa09_corrente.executar),
+            Etapa("10", "sínteses municipais e correlações — fontes correntes", etapa10_corrente.executar),
         ]
     return ETAPAS_BASE + analiticas + ETAPAS_FINAIS
 
@@ -94,7 +101,7 @@ def main() -> None:
             "historico: exige regressão numérica integral do fechamento original"
         ),
     )
-    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09"]
+    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09", "10"]
     parser.add_argument("--etapa", choices=sorted(set(codigos)) + ["implementadas", "todas"], default="implementadas")
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
