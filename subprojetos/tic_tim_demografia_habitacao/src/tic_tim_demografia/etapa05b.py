@@ -21,6 +21,7 @@ VARIAVEIS_AER = [
     "V00312", "V00313", "V00314", "V00315", "V00316",
     "V00399", "V00400", "V00401", "V00402",
 ]
+VARIAVEIS_PARENTESCO = ["V01179", "V01188"]
 VAR_BUEIRO_RE = re.compile(r"\bV0(?:50|52|54)\d{2}\b", re.I)
 UNIVERSO_POR_PREFIXO = {"V050": "domicilios", "V052": "moradores", "V054": "faces"}
 
@@ -45,6 +46,17 @@ def _selecionar_domicilios(candidatos: list[str]) -> list[str]:
     if len(escolhidos) != 3:
         raise ValueError(f"Esperados tres arquivos gerais de domicilio; encontrados={escolhidos}")
     return sorted(escolhidos)
+
+
+def _selecionar_parentesco(candidatos: list[str]) -> str:
+    escolhidos = [
+        url
+        for url in candidatos
+        if "parentesco" in _nome(url).casefold() and _nome(url).casefold().endswith(".zip")
+    ]
+    if len(escolhidos) != 1:
+        raise ValueError(f"Esperado um unico agregado de parentesco; encontrados={escolhidos}")
+    return escolhidos[0]
 
 
 def _detectar_encoding(bruto: bytes) -> str:
@@ -265,7 +277,12 @@ def executar(raiz: Path) -> None:
         raise FileNotFoundError(f"Gate 05a ausente: {qa05a_path}. Execute primeiro --etapa 05a.")
     qa05a = _carregar_json(qa05a_path)
 
-    urls_dom = _selecionar_domicilios(list(qa05a["candidatos_agregados_domiciliares"]))
+    snap_agreg = _carregar_json(paths.raw / "ibge" / "indices_publicacao" / "censo2022_agregados_setor.json")
+    links_agreg = [str(x) for x in snap_agreg.get("links", [])]
+    url_parentesco = _selecionar_parentesco(links_agreg)
+    urls_dom = sorted(
+        set(_selecionar_domicilios(list(qa05a["candidatos_agregados_domiciliares"])) + [url_parentesco])
+    )
     entorno = qa05a["entorno"]["candidatos_por_universo"]
     urls_entorno: dict[str, str] = {}
     for universo in ("domicilios", "moradores", "faces"):
@@ -287,6 +304,17 @@ def executar(raiz: Path) -> None:
         path = _baixar_se_ausente(cliente, url, raw_dom / _nome(url), manifesto)
         inspecoes_dom.append(inspecionar_zip(path))
 
+    mapa_parentesco = _mapear_variaveis(inspecoes_dom, VARIAVEIS_PARENTESCO)
+    fontes_parentesco = sorted(
+        set(mapa_parentesco[VARIAVEIS_PARENTESCO[0]])
+        & set(mapa_parentesco[VARIAVEIS_PARENTESCO[1]])
+    )
+    if len(fontes_parentesco) != 1:
+        raise ValueError(
+            "V01179/V01188 devem ocorrer conjuntamente em um unico agregado de parentesco; "
+            f"fontes={fontes_parentesco}"
+        )
+
     inspecoes_entorno = {}
     for universo, url in urls_entorno.items():
         path = _baixar_se_ausente(cliente, url, raw_ent / _nome(url), manifesto)
@@ -297,7 +325,6 @@ def executar(raiz: Path) -> None:
     ambiguas = {v: fontes for v, fontes in mapa_aer.items() if len(fontes) > 1}
 
     snap_ent = _carregar_json(paths.raw / "ibge" / "indices_publicacao" / "censo2022_entorno_setor.json")
-    snap_agreg = _carregar_json(paths.raw / "ibge" / "indices_publicacao" / "censo2022_agregados_setor.json")
     candidatos_dicionario = _candidatos_documentacao(snap_ent, snap_agreg)
     paginas_parent = [
         "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/",
@@ -344,8 +371,11 @@ def executar(raiz: Path) -> None:
         "status": status,
         "etapa": "05b",
         "arquivos_domiciliares": urls_dom,
+        "arquivo_parentesco": url_parentesco,
         "arquivos_entorno": urls_entorno,
         "inspecao_domicilios": inspecoes_dom,
+        "mapa_variaveis_parentesco": mapa_parentesco,
+        "fonte_parentesco_conjunta": fontes_parentesco[0],
         "inspecao_entorno": inspecoes_entorno,
         "mapa_variaveis_aer": mapa_aer,
         "variaveis_aer_faltantes": faltantes,
@@ -358,6 +388,7 @@ def executar(raiz: Path) -> None:
         "erros_dicionario": erros_dicionario,
         "regra": (
             "A/E/R somente podem ser calculados depois de todas as variaveis requeridas serem localizadas em cabecalhos oficiais; "
+            "V01179/V01188 devem ser comprovadas conjuntamente no agregado oficial de parentesco; "
             "D somente depois de os codigos de bueiro/boca de lobo serem comprovados no dicionario oficial e reencontrados nos cabecalhos dos tres universos"
         ),
         "regra_drenagem": (
