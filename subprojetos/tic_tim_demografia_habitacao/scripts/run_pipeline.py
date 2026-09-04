@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Orquestrador do pipeline TIC–TIM de demografia e habitação.
 
-As etapas são implementadas incrementalmente. Uma etapa só deixa o estado de
-placeholder depois de possuir fonte, proveniência, QA e testes compatíveis com
-o caderno metodológico público.
+As etapas são implementadas incrementalmente. Nas etapas 07–09 existem dois
+modos explícitos: ``corrente`` usa fontes públicas atuais com checkpoint
+territorial histórico imutável e registra deriva de edição; ``historico``
+mantém os gates numéricos rígidos do fechamento original.
 """
 
 from __future__ import annotations
@@ -22,8 +23,9 @@ if str(SRC) not in sys.path:
 from tic_tim_demografia import (  # noqa: E402
     etapa00, etapa01, etapa02, etapa02b, etapa02c, etapa03a, etapa03b, etapa03c,
     etapa04, etapa05a, etapa05b, etapa05c, etapa05d, etapa05e, etapa06a, etapa06b,
-    etapa07, etapa08, etapa09,
+    etapa07, etapa07_corrente, etapa08, etapa08_corrente, etapa09, etapa09_corrente,
 )
+
 
 @dataclass(frozen=True)
 class Etapa:
@@ -32,6 +34,7 @@ class Etapa:
     funcao: Callable[[Path], None]
     implementada: bool = True
 
+
 def ainda_nao_implementada(nome: str) -> Callable[[Path], None]:
     def executar(_raiz: Path) -> None:
         raise NotImplementedError(
@@ -39,7 +42,8 @@ def ainda_nao_implementada(nome: str) -> Callable[[Path], None]:
         )
     return executar
 
-ETAPAS = [
+
+ETAPAS_BASE = [
     Etapa("00", "configuração, universo e QA inicial", etapa00.executar),
     Etapa("01", "aquisição e congelamento inicial das fontes", etapa01.executar),
     Etapa("02a", "gate semântico SIDRA para harmonização longitudinal", etapa02.executar),
@@ -56,33 +60,61 @@ ETAPAS = [
     Etapa("05e", "ponderação por exposição e priorização do ISAU corrigido", etapa05e.executar),
     Etapa("06a", "gate semântico dos atributos do entorno urbano", etapa06a.executar),
     Etapa("06b", "atributos setoriais do entorno e F3", etapa06b.executar),
-    Etapa("07", "quatro famílias analíticas no corte P75", etapa07.executar),
-    Etapa("08", "sensibilidade P75/P80", etapa08.executar),
-    Etapa("09", "validação espacial Queen e Moran", etapa09.executar),
+]
+ETAPAS_FINAIS = [
     Etapa("10", "sínteses municipais", ainda_nao_implementada("sínteses municipais"), False),
     Etapa("11", "tabelas e mapas", ainda_nao_implementada("tabelas e mapas"), False),
     Etapa("12", "QA final", ainda_nao_implementada("QA final"), False),
 ]
 
+
+def etapas_para_modo(modo: str) -> list[Etapa]:
+    if modo == "historico":
+        analiticas = [
+            Etapa("07", "quatro famílias analíticas P75 — regressão histórica", etapa07.executar),
+            Etapa("08", "sensibilidade P75/P80 — regressão histórica", etapa08.executar),
+            Etapa("09", "validação espacial — regressão histórica", etapa09.executar),
+        ]
+    else:
+        analiticas = [
+            Etapa("07", "quatro famílias P75 — fontes correntes + checkpoint histórico", etapa07_corrente.executar),
+            Etapa("08", "sensibilidade P75/P80 — fontes correntes + checkpoint histórico", etapa08_corrente.executar),
+            Etapa("09", "validação espacial — fontes correntes + checkpoint histórico", etapa09_corrente.executar),
+        ]
+    return ETAPAS_BASE + analiticas + ETAPAS_FINAIS
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raiz", type=Path, default=ROOT)
-    parser.add_argument("--etapa", choices=[e.codigo for e in ETAPAS] + ["implementadas", "todas"], default="implementadas")
+    parser.add_argument(
+        "--modo", choices=["corrente", "historico"], default="corrente",
+        help=(
+            "corrente: recalcula variáveis com fontes públicas atuais e registra deriva; "
+            "historico: exige regressão numérica integral do fechamento original"
+        ),
+    )
+    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09"]
+    parser.add_argument("--etapa", choices=sorted(set(codigos)) + ["implementadas", "todas"], default="implementadas")
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
+
+    etapas = etapas_para_modo(args.modo)
     if args.listar:
-        for etapa in ETAPAS:
+        print(f"modo: {args.modo}")
+        for etapa in etapas:
             print(f"{etapa.codigo}: {etapa.nome} [{'OK' if etapa.implementada else 'PENDENTE'}]")
         return
     if args.etapa == "implementadas":
-        selecionadas = [e for e in ETAPAS if e.implementada]
+        selecionadas = [e for e in etapas if e.implementada]
     elif args.etapa == "todas":
-        selecionadas = ETAPAS
+        selecionadas = etapas
     else:
-        selecionadas = [e for e in ETAPAS if e.codigo == args.etapa]
+        selecionadas = [e for e in etapas if e.codigo == args.etapa]
     for etapa in selecionadas:
-        print(f"[{etapa.codigo}] {etapa.nome}")
+        print(f"[{etapa.codigo}] {etapa.nome} (modo={args.modo})")
         etapa.funcao(args.raiz)
+
 
 if __name__ == "__main__":
     main()
