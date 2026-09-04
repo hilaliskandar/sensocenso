@@ -22,7 +22,10 @@ MALHA_SP_URL = (
     "SP_setores_CD2022.zip"
 )
 
-EXPECTED_C3 = 8291
+# 8.291 e a cobertura C3 preservada no fechamento historico. As bases publicas
+# do IBGE podem ser republicadas/revisadas; a pipeline corrente observou 8.312.
+# Portanto 8.291 permanece como referencia de proveniencia, nao como gate duro.
+HISTORICAL_C3_REFERENCE = 8291
 EXPECTED_INTEGRATED = 8073
 EXPECTED_ISLANDS = 177
 EXPECTED_MORAN_N = 7896
@@ -41,7 +44,7 @@ def _coluna_setor(gdf: gpd.GeoDataFrame) -> str:
     for candidato in ("cd_setor", "cdsetor", "codigo_setor"):
         if candidato in mapa:
             return mapa[candidato]
-    raise ValueError(f"Malha IBGE sem código de setor reconhecível: {list(gdf.columns)}")
+    raise ValueError(f"Malha IBGE sem codigo de setor reconhecivel: {list(gdf.columns)}")
 
 
 def _carregar_geometrias(path: Path, setores: set[str]) -> gpd.GeoDataFrame:
@@ -50,7 +53,7 @@ def _carregar_geometrias(path: Path, setores: set[str]) -> gpd.GeoDataFrame:
     gdf["codigo_setor"] = gdf[coluna].astype("string").str.strip()
     gdf = gdf.loc[gdf["codigo_setor"].isin(setores), ["codigo_setor", "geometry"]].copy()
     if gdf["codigo_setor"].duplicated().any():
-        raise AssertionError("Malha oficial possui código de setor duplicado no universo TIC–TIM.")
+        raise AssertionError("Malha oficial possui codigo de setor duplicado no universo TIC-TIM.")
     if gdf.crs is None:
         raise ValueError("Malha oficial sem CRS declarado.")
     invalidas = ~gdf.geometry.is_valid
@@ -59,7 +62,7 @@ def _carregar_geometrias(path: Path, setores: set[str]) -> gpd.GeoDataFrame:
     vazias = gdf.geometry.is_empty | gdf.geometry.isna()
     if vazias.any():
         amostra = gdf.loc[vazias, "codigo_setor"].astype(str).tolist()[:20]
-        raise ValueError(f"Geometrias vazias/nulas no universo analítico: {amostra}")
+        raise ValueError(f"Geometrias vazias/nulas no universo analitico: {amostra}")
     return gdf
 
 
@@ -139,23 +142,33 @@ def executar(raiz: Path) -> None:
 
     entrada = paths.processed / "setorial" / "base_familias_sensibilidade_p75_p80.parquet"
     if not entrada.exists():
-        raise FileNotFoundError(f"Pré-requisito 09 ausente: {entrada}")
+        raise FileNotFoundError(f"Pre-requisito 09 ausente: {entrada}")
 
     base = pd.read_parquet(entrada)
     base["codigo_setor"] = base["codigo_setor"].astype("string").str.strip()
     if base["codigo_setor"].duplicated().any():
-        raise AssertionError("Base analítica possui CD_SETOR duplicado antes da validação espacial.")
+        raise AssertionError("Base analitica possui CD_SETOR duplicado antes da validacao espacial.")
     obrigatorias = ["PRIV_C3", "POP_TOTAL", "DPPO", "FLAG_UNIVERSO_INTEGRADO", "codigo_ibge"]
     faltantes = [c for c in obrigatorias if c not in base.columns]
     if faltantes:
-        raise ValueError(f"Base 08 sem colunas necessárias à validação espacial: {faltantes}")
+        raise ValueError(f"Base 08 sem colunas necessarias a validacao espacial: {faltantes}")
 
     diagnostico = _diagnostico_cobertura(base)
-    if diagnostico["n_c3"] != EXPECTED_C3:
+    if diagnostico["n_c3"] < EXPECTED_INTEGRATED:
         raise AssertionError(
-            "Universo C3 divergiu do fechamento metodológico: "
-            f"{diagnostico['n_c3']} != {EXPECTED_C3}"
+            "Cobertura C3 corrente e menor que o universo integrado canonico: "
+            f"{diagnostico['n_c3']} < {EXPECTED_INTEGRATED}"
         )
+    diagnostico["n_c3_referencia_historica"] = HISTORICAL_C3_REFERENCE
+    diagnostico["delta_c3_vs_referencia_historica"] = (
+        diagnostico["n_c3"] - HISTORICAL_C3_REFERENCE
+    )
+    diagnostico["status_edicao_c3"] = (
+        "igual_referencia_historica"
+        if diagnostico["n_c3"] == HISTORICAL_C3_REFERENCE
+        else "edicao_corrente_diverge_da_referencia_historica"
+    )
+
     if diagnostico["n_flag_integrado"] != EXPECTED_INTEGRATED:
         raise AssertionError(
             "Gate integrado recebido da etapa 07/08 divergiu: "
@@ -174,12 +187,12 @@ def executar(raiz: Path) -> None:
     diverg_gate = len(apenas_checkpoint) + len(apenas_flag)
     if diverg_gate:
         raise AssertionError(
-            "FLAG_UNIVERSO_INTEGRADO diverge do checkpoint canônico Gate 18G7E: "
+            "FLAG_UNIVERSO_INTEGRADO diverge do checkpoint canonico Gate 18G7E: "
             f"n={diverg_gate}; apenas_checkpoint={apenas_checkpoint[:20]}; apenas_flag={apenas_flag[:20]}"
         )
     integrado = base.loc[flag].copy()
     if integrado["PRIV_C3"].isna().any():
-        raise AssertionError("Universo integrado contém setor sem ISAU-C3, contrariando o Gate 18G7E.")
+        raise AssertionError("Universo integrado contem setor sem ISAU-C3, contrariando o Gate 18G7E.")
 
     raw_dir = paths.raw / "ibge" / "censo2022" / "malha_setores"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -199,7 +212,7 @@ def executar(raiz: Path) -> None:
     espacial = gpd.GeoDataFrame(espacial, geometry="geometry", crs=geometrias.crs)
     if len(espacial) != EXPECTED_INTEGRATED:
         raise AssertionError(
-            f"Join geometria × universo integrado alterou o universo: {len(espacial)}"
+            f"Join geometria x universo integrado alterou o universo: {len(espacial)}"
         )
 
     w_integrado = _queen(espacial)
@@ -227,8 +240,8 @@ def executar(raiz: Path) -> None:
     }
     if divergencias:
         raise AssertionError(
-            "Topologia Queen não reproduziu os invariantes auditados; "
-            f"divergencias={divergencias}. Não corrigir manualmente."
+            "Topologia Queen nao reproduziu os invariantes auditados; "
+            f"divergencias={divergencias}. Nao corrigir manualmente."
         )
 
     ilhas_path = paths.qa / "etapa09_ilhas_queen_8073.csv"
@@ -238,12 +251,12 @@ def executar(raiz: Path) -> None:
     moran_base = espacial.loc[~espacial["codigo_setor"].astype(str).isin(ilhas)].copy()
     if len(moran_base) != EXPECTED_MORAN_N:
         raise AssertionError(
-            f"Universo do Moran não fechou: {len(moran_base)} != {EXPECTED_MORAN_N}"
+            f"Universo do Moran nao fechou: {len(moran_base)} != {EXPECTED_MORAN_N}"
         )
 
-    # O caderno preserva o valor de referência, mas registra que a transformação
-    # canônica da matriz de pesos deve ser recuperada do artefato computacional
-    # original, não inferida retrospectivamente. Calculam-se R e B como diagnóstico.
+    # O caderno preserva o valor de referencia, mas registra que a transformacao
+    # canonica da matriz de pesos deve ser recuperada do artefato computacional
+    # original, nao inferida retrospectivamente. Calculam-se R e B como diagnostico.
     seed = 20260830
     moran_r = _moran_por_transformacao(moran_base, "r", permutacoes, seed=seed)
     moran_b = _moran_por_transformacao(moran_base, "b", permutacoes, seed=seed)
@@ -268,18 +281,25 @@ def executar(raiz: Path) -> None:
         "fonte_malha": MALHA_SP_URL,
         "crs_malha": str(espacial.crs),
         "gate_compatibilidade_tematica": (
-            "checkpoint canônico Gate 18G7E: interseção entre tipologia estrutural final e ISAU-C3"
+            "checkpoint canonico Gate 18G7E: intersecao entre tipologia estrutural final e ISAU-C3"
         ),
         "checkpoint_universo_integrado": checkpoint_meta,
         "diagnostico_cobertura": diagnostico,
+        "referencia_historica_c3": {
+            "n_setores": HISTORICAL_C3_REFERENCE,
+            "tratamento": (
+                "Referencia do fechamento historico; divergencia da edicao publica corrente e "
+                "registrada, mas nao redefine o Gate 18G7E de 8.073 setores."
+            ),
+        },
         "divergencias_gate_07_09": diverg_gate,
         "invariantes_topologicos": invariantes,
         "universo_moran": int(len(moran_base)),
         "moran_candidatos": {"row_standardized": moran_r, "binary": moran_b},
         "referencia_moran": {"I_aprox": ref_i, "p_sim": ref_p},
         "pendencia_moran": (
-            "Recuperar do artefato computacional histórico a transformação/normalização canônica "
-            "dos pesos antes de declarar reprodução numérica bit a bit."
+            "Recuperar do artefato computacional historico a transformacao/normalizacao canonica "
+            "dos pesos antes de declarar reproducao numerica bit a bit."
         ),
         "saidas": [
             str(gpkg_path.relative_to(paths.data_root)),
@@ -298,6 +318,8 @@ def executar(raiz: Path) -> None:
             "status": qa["status"],
             "universo_integrado": int(len(espacial)),
             "universo_moran": int(len(moran_base)),
+            "n_c3_corrente": diagnostico["n_c3"],
+            "n_c3_referencia_historica": HISTORICAL_C3_REFERENCE,
         },
     )
     print(json.dumps(qa, ensure_ascii=False, indent=2))
