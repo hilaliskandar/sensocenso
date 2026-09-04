@@ -10,6 +10,7 @@ from .etapa05b import inspecionar_zip
 from .etapa05c import _arquivo_por_url, _coluna, _ler_csv_zip, _numero, _preparar_setor
 from .paths import resolve_paths
 from .proveniencia import registrar_arquivo, registrar_evento
+from .universo_integrado import carregar_universo_integrado_canonico
 
 
 ARRANJO_DENOMINADOR = "V01179"
@@ -222,17 +223,30 @@ def executar(raiz: Path) -> None:
     base = base.merge(exposicao[expo_cols], on="codigo_setor", how="left", validate="one_to_one")
     base = base.merge(entorno[entorno_cols], on="codigo_setor", how="left", validate="one_to_one")
 
-    # O universo integrado do fechamento combina observabilidade C3 e exposição
-    # populacional/domiciliar. Os percentis setoriais da territorialização são
-    # calculados nesse universo; ausências das demais dimensões permanecem NA.
-    base["FLAG_UNIVERSO_INTEGRADO"] = (
-        base["PRIV_C3"].notna() & base["POP_TOTAL"].notna() & base["DPPO"].notna()
+    checkpoint, checkpoint_meta = carregar_universo_integrado_canonico(
+        paths.raw,
+        esperado=esperado_integrado,
     )
+    codigos_checkpoint = set(checkpoint["codigo_setor"].astype(str))
+    codigos_base = set(base["codigo_setor"].astype(str))
+    ausentes_checkpoint = sorted(codigos_checkpoint - codigos_base)
+    if ausentes_checkpoint:
+        raise AssertionError(
+            "Checkpoint Gate 18G7E contém setores ausentes da base urbana atual: "
+            f"n={len(ausentes_checkpoint)}; amostra={ausentes_checkpoint[:20]}"
+        )
+    base["FLAG_UNIVERSO_INTEGRADO"] = base["codigo_setor"].astype(str).isin(codigos_checkpoint)
     if int(base["FLAG_UNIVERSO_INTEGRADO"].sum()) != esperado_integrado:
         raise AssertionError(
-            "Gate do universo integrado não reproduziu o fechamento: "
-            f"{int(base['FLAG_UNIVERSO_INTEGRADO'].sum())} != {esperado_integrado}. "
-            "Não recortar manualmente; investigar cobertura e joins."
+            "Gate integrado recebido do checkpoint G7E divergiu do fechamento: "
+            f"{int(base['FLAG_UNIVERSO_INTEGRADO'].sum())} != {esperado_integrado}"
+        )
+    integrado_pre = base.loc[base["FLAG_UNIVERSO_INTEGRADO"]]
+    if integrado_pre["PRIV_C3"].isna().any():
+        amostra = integrado_pre.loc[integrado_pre["PRIV_C3"].isna(), "codigo_setor"].astype(str).tolist()[:20]
+        raise AssertionError(
+            "Checkpoint G7E inclui setores sem ISAU-C3 na reprodução corrente; "
+            f"amostra={amostra}"
         )
 
     qa05b = json.loads(arquivos["qa05b"].read_text(encoding="utf-8"))
@@ -394,7 +408,11 @@ def executar(raiz: Path) -> None:
         "etapa": "07",
         "universo_base_setores": int(len(base)),
         "universo_integrado": int(base["FLAG_UNIVERSO_INTEGRADO"].sum()),
-        "regra_universo_integrado": "PRIV_C3, POP_TOTAL e DPPO observáveis",
+        "regra_universo_integrado": (
+            "checkpoint canônico Gate 18G7E: setores com tipologia estrutural final "
+            "e ISAU-C3 simultaneamente disponíveis"
+        ),
+        "checkpoint_universo_integrado": checkpoint_meta,
         "percentil": q,
         "minimo_familias_convergencia": minimo,
         "fonte_arranjo": {"arquivo": arranjo_path.name, "url": arranjo_url},
