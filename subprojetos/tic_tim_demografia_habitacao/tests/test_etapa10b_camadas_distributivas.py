@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from tic_tim_demografia.etapa10b_corrente import (
     _agregar_arranjo,
@@ -45,7 +46,7 @@ def test_agregar_fcu_usa_mesmo_universo_no_denominador():
 def test_rr_e_flags_sao_descritivos():
     serie = pd.Series([0.09, 0.10, 0.11])
     rr = _rr(serie, 0.10)
-    assert rr.tolist() == [0.9, 1.0, 1.0999999999999999]
+    assert rr.tolist() == pytest.approx([0.9, 1.0, 1.1])
     assert _flag_rr(0.89) == ">=10% abaixo da referência"
     assert _flag_rr(1.00) == "próximo da referência"
     assert _flag_rr(1.11) == ">=10% acima da referência"
