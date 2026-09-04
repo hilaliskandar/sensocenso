@@ -1,0 +1,109 @@
+name: TIC-TIM materializa checkpoint G7F2
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-demografia-pipeline
+    paths:
+      - '.github/workflows/tic_tim_materializa_checkpoint_g7f2.yml'
+permissions:
+  contents: read
+jobs:
+  materializa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: subprojetos/tic_tim_demografia_habitacao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Instala dependencias
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pip install gdown
+      - name: Recupera fontes historicas G7F2
+        shell: bash
+        run: |
+          set -u
+          mkdir -p /tmp/g7f2_materializacao/fontes /tmp/g7f2_materializacao/checkpoint
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          out = Path('/tmp/g7f2_materializacao')
+          fonte = out / 'fontes' / 'TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx'
+          url = 'https://docs.google.com/spreadsheets/d/1QdVlkhE5P2dtiTInSIDGiLHFj1VJACaW1705ta53oS0/export?format=xlsx'
+          meta = {'fonte': 'Gate18G7F2 Google Sheet', 'url': url}
+          try:
+              r = requests.get(url, timeout=180, allow_redirects=True)
+              meta.update({
+                  'status_code': r.status_code,
+                  'url_final': r.url,
+                  'content_type': r.headers.get('content-type'),
+                  'bytes': len(r.content),
+              })
+              if r.ok and r.content[:2] == b'PK':
+                  fonte.write_bytes(r.content)
+                  meta['status'] = 'ok'
+              else:
+                  meta['status'] = 'erro'
+                  meta['prefixo'] = r.text[:500] if 'text' in (r.headers.get('content-type') or '').lower() else repr(r.content[:100])
+          except Exception as exc:
+              meta.update({'status': 'erro', 'erro_tipo': type(exc).__name__, 'erro': str(exc)})
+          (out / 'download_sheet.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps(meta, ensure_ascii=False, indent=2))
+          PY
+          gdown --id 1zR6RGIPXZqDG36IB1ItCPEhIk4__F2ub -O /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg > /tmp/g7f2_materializacao/gdown_stdout.txt 2> /tmp/g7f2_materializacao/gdown_stderr.txt || true
+          ls -lah /tmp/g7f2_materializacao/fontes
+      - name: Materializa checkpoint pela planilha
+        id: sheet
+        continue-on-error: true
+        run: |
+          if [ -s /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx ]; then
+            python scripts/materializar_checkpoint_g7f2.py \
+              --fonte /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx \
+              --destino /tmp/g7f2_materializacao/checkpoint
+          else
+            echo 'Planilha G7F2 nao foi recuperada.' >&2
+            exit 2
+          fi
+      - name: Materializa checkpoint pelo GeoPackage
+        id: gpkg
+        if: steps.sheet.outcome != 'success'
+        continue-on-error: true
+        run: |
+          if [ -s /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg ]; then
+            python scripts/materializar_checkpoint_g7f2.py \
+              --fonte /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg \
+              --destino /tmp/g7f2_materializacao/checkpoint
+          else
+            echo 'GeoPackage G7F2 nao foi recuperado.' >&2
+            exit 3
+          fi
+      - name: Valida resultado
+        run: |
+          test -s /tmp/g7f2_materializacao/checkpoint/TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.csv
+          test -s /tmp/g7f2_materializacao/checkpoint/TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.manifest.json
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+          p = Path('/tmp/g7f2_materializacao/checkpoint/TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.csv')
+          df = pd.read_csv(p, dtype={'codigo_setor': 'string'})
+          print('n=', len(df), 'unicos=', df.codigo_setor.nunique())
+          print('macro=', df.macrotipo_checkpoint.value_counts().sort_index().to_dict())
+          print(json.loads(p.with_name('TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.manifest.json').read_text(encoding='utf-8')))
+          PY
+      - name: Publica materializacao e diagnosticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-checkpoint-g7f2-materializacao
+          path: /tmp/g7f2_materializacao/**
+          if-no-files-found: warn
+          retention-days: 7
