@@ -58,7 +58,7 @@ jobs:
           (out / 'download_sheet.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
           print(json.dumps(meta, ensure_ascii=False, indent=2))
           PY
-          gdown --id 1zR6RGIPXZqDG36IB1ItCPEhIk4__F2ub -O /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg > /tmp/g7f2_materializacao/gdown_stdout.txt 2> /tmp/g7f2_materializacao/gdown_stderr.txt || true
+          gdown 1zR6RGIPXZqDG36IB1ItCPEhIk4__F2ub -O /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg > /tmp/g7f2_materializacao/gdown_stdout.txt 2> /tmp/g7f2_materializacao/gdown_stderr.txt || true
           ls -lah /tmp/g7f2_materializacao/fontes
       - name: Materializa checkpoint pela planilha
         id: sheet
