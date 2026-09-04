@@ -19,6 +19,7 @@ dependencies = [
   "shapely>=2.0",
   "libpysal>=4.12",
   "esda>=2.6",
+  "scipy>=1.13",
   "matplotlib>=3.9",
 ]
 
