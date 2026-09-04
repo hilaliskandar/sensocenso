@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +14,7 @@ G7E_SHEET_ID = "12B7bLrQgJh_pIyClDb24baiZGl8UKn4MQH8qWB7eL2Y"
 G7E_EXPORT_URL = f"https://docs.google.com/spreadsheets/d/{G7E_SHEET_ID}/export?format=xlsx"
 G7E_FILENAME = "TIC_TIM_GATE18G7E_VALIDACAO_ISAU_TIPOLOGIA_v3.xlsx"
 G7E_DIAGNOSTICO_FILENAME = "TIC_TIM_GATE18G7E_diagnostico.json"
+G7E_DOWNLOAD_DIAGNOSTICO_FILENAME = "TIC_TIM_GATE18G7E_download.json"
 G7E_COMPOSICAO_MACRO_CANONICA = {2: 3568, 3: 3843, 4: 662}
 
 _SETOR_ALIASES = ("CDSETOR", "CDSETOR2022", "CODIGOSETOR", "CODSETOR")
@@ -35,20 +37,6 @@ def _normalizar_codigo_setor(serie: pd.Series) -> pd.Series:
     return out.where(out.str.fullmatch(r"\d{15}", na=False))
 
 
-def _baixar_checkpoint(destino: Path) -> None:
-    if destino.exists() and destino.stat().st_size > 0:
-        return
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    resposta = requests.get(G7E_EXPORT_URL, timeout=180)
-    resposta.raise_for_status()
-    if len(resposta.content) < 10_000:
-        raise ValueError(
-            "Exportação do checkpoint Gate 18G7E retornou conteúdo inesperadamente pequeno: "
-            f"{len(resposta.content)} bytes"
-        )
-    destino.write_bytes(resposta.content)
-
-
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -57,12 +45,121 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _gravar_diagnostico(path: Path, payload: dict[str, object]) -> None:
-    destino = path.parent / G7E_DIAGNOSTICO_FILENAME
+def _gravar_json(destino: Path, payload: dict[str, object]) -> None:
+    destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+
+
+def _prefixo_textual_resposta(resposta: requests.Response, limite: int = 500) -> str | None:
+    content_type = str(resposta.headers.get("Content-Type", "")).lower()
+    if not any(token in content_type for token in ("text/", "json", "html", "xml")):
+        return None
+    try:
+        texto = resposta.text[:limite]
+    except Exception:  # pragma: no cover - requests normalmente consegue decodificar texto
+        return None
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _validar_xlsx(path: Path, *, tamanho_minimo: int = 10_000) -> None:
+    tamanho = int(path.stat().st_size)
+    if tamanho < tamanho_minimo:
+        raise ValueError(
+            "Exportação do checkpoint Gate 18G7E retornou conteúdo inesperadamente pequeno: "
+            f"{tamanho} bytes"
+        )
+    if not zipfile.is_zipfile(path):
+        raise ValueError(
+            "Exportação do checkpoint Gate 18G7E não é um arquivo XLSX/ZIP válido."
+        )
+
+
+def _baixar_checkpoint(destino: Path) -> None:
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    diagnostico_path = destino.parent / G7E_DOWNLOAD_DIAGNOSTICO_FILENAME
+
+    if destino.exists() and destino.stat().st_size > 0:
+        try:
+            _validar_xlsx(destino)
+        except Exception as exc:
+            _gravar_json(
+                diagnostico_path,
+                {
+                    "status": "cache_invalido",
+                    "arquivo_cache": str(destino),
+                    "tamanho_bytes": int(destino.stat().st_size),
+                    "erro": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            destino.unlink()
+        else:
+            _gravar_json(
+                diagnostico_path,
+                {
+                    "status": "cache_ok",
+                    "arquivo_cache": str(destino),
+                    "tamanho_bytes": int(destino.stat().st_size),
+                    "sha256": _sha256(destino),
+                },
+            )
+            return
+
+    meta: dict[str, object] = {
+        "status": "iniciando",
+        "url_solicitada": G7E_EXPORT_URL,
+        "arquivo_destino": str(destino),
+    }
+    _gravar_json(diagnostico_path, meta)
+    temporario = destino.with_suffix(destino.suffix + ".part")
+
+    try:
+        resposta = requests.get(G7E_EXPORT_URL, timeout=180, allow_redirects=True)
+        meta.update(
+            {
+                "http_status": int(resposta.status_code),
+                "url_final": str(resposta.url),
+                "content_type": str(resposta.headers.get("Content-Type", "")),
+                "content_length_header": str(resposta.headers.get("Content-Length", "")),
+                "tamanho_resposta_bytes": int(len(resposta.content)),
+            }
+        )
+        prefixo = _prefixo_textual_resposta(resposta)
+        if prefixo:
+            meta["prefixo_resposta_textual"] = prefixo
+        _gravar_json(diagnostico_path, meta)
+        resposta.raise_for_status()
+
+        temporario.write_bytes(resposta.content)
+        _validar_xlsx(temporario)
+        temporario.replace(destino)
+        meta.update(
+            {
+                "status": "ok",
+                "tamanho_arquivo_bytes": int(destino.stat().st_size),
+                "sha256": _sha256(destino),
+            }
+        )
+        _gravar_json(diagnostico_path, meta)
+    except Exception as exc:
+        if temporario.exists():
+            meta["tamanho_temporario_bytes"] = int(temporario.stat().st_size)
+            temporario.unlink()
+        meta.update(
+            {
+                "status": "erro",
+                "erro_tipo": type(exc).__name__,
+                "erro": str(exc),
+            }
+        )
+        _gravar_json(diagnostico_path, meta)
+        raise
+
+
+def _gravar_diagnostico(path: Path, payload: dict[str, object]) -> None:
+    _gravar_json(path.parent / G7E_DIAGNOSTICO_FILENAME, payload)
 
 
 def _detectar_linha_cabecalho(preview: pd.DataFrame) -> int | None:
