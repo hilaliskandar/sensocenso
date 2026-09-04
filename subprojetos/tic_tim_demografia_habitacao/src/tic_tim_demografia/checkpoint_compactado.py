@@ -40,7 +40,12 @@ def carregar_checkpoint_compactado_versionado(
     *,
     esperado: int = EXPECTED_INTEGRATED,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Carrega e valida o checkpoint versionado sem qualquer acesso de rede."""
+    """Carrega e valida o checkpoint versionado sem qualquer acesso de rede.
+
+    A integridade normativa é a do CSV descompactado. O gzip é apenas envelope
+    de armazenamento e pode variar em metadados de compressão sem alterar os
+    bytes canônicos do CSV.
+    """
     payload = caminho_payload_versionado()
     manifest = payload.with_name(MANIFEST_FILENAME)
     if not payload.exists():
@@ -54,11 +59,11 @@ def carregar_checkpoint_compactado_versionado(
 
     comprimido = payload.read_bytes()
     sha_gzip = hashlib.sha256(comprimido).hexdigest()
-    esperado_gzip = metadata.get("sha256_payload_gzip")
-    if esperado_gzip and esperado_gzip != sha_gzip:
-        raise RuntimeError("SHA-256 do payload gzip diverge do manifesto.")
+    try:
+        bruto = gzip.decompress(comprimido)
+    except (OSError, EOFError) as exc:
+        raise RuntimeError("Payload gzip do Gate18G7F2 é inválido ou está truncado.") from exc
 
-    bruto = gzip.decompress(comprimido)
     sha_csv = hashlib.sha256(bruto).hexdigest()
     if metadata.get("sha256_csv") != sha_csv:
         raise RuntimeError(
@@ -80,7 +85,7 @@ def carregar_checkpoint_compactado_versionado(
         "fonte_checkpoint": str(payload),
         "papel": "checkpoint_canonico_versionado_compactado",
         "sha256_csv": sha_csv,
-        "sha256_payload_gzip": sha_gzip,
+        "sha256_payload_gzip_observado": sha_gzip,
         "regra_selecao": metadata.get("regra_selecao", SELECTION_RULE),
         "n_setores": len(canonico),
         "macro_composicao": counts,
