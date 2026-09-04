@@ -13,6 +13,7 @@ from .config import carregar_parametros
 from .fontes.http import HttpClient
 from .paths import resolve_paths
 from .proveniencia import registrar_arquivo, registrar_evento
+from .universo_integrado import carregar_universo_integrado_canonico
 
 
 MALHA_SP_URL = (
@@ -161,15 +162,24 @@ def executar(raiz: Path) -> None:
             f"{diagnostico['n_flag_integrado']} != {EXPECTED_INTEGRATED}"
         )
 
-    gate_recalculado = base["PRIV_C3"].notna() & base["POP_TOTAL"].notna() & base["DPPO"].notna()
+    checkpoint, checkpoint_meta = carregar_universo_integrado_canonico(
+        paths.raw,
+        esperado=EXPECTED_INTEGRATED,
+    )
+    codigos_checkpoint = set(checkpoint["codigo_setor"].astype(str))
     flag = base["FLAG_UNIVERSO_INTEGRADO"].astype(bool)
-    diverg_gate = int((gate_recalculado != flag).sum())
+    codigos_flag = set(base.loc[flag, "codigo_setor"].astype(str))
+    apenas_checkpoint = sorted(codigos_checkpoint - codigos_flag)
+    apenas_flag = sorted(codigos_flag - codigos_checkpoint)
+    diverg_gate = len(apenas_checkpoint) + len(apenas_flag)
     if diverg_gate:
         raise AssertionError(
-            "FLAG_UNIVERSO_INTEGRADO diverge do gate temático reproduzido em 09: "
-            f"{diverg_gate} setores"
+            "FLAG_UNIVERSO_INTEGRADO diverge do checkpoint canônico Gate 18G7E: "
+            f"n={diverg_gate}; apenas_checkpoint={apenas_checkpoint[:20]}; apenas_flag={apenas_flag[:20]}"
         )
     integrado = base.loc[flag].copy()
+    if integrado["PRIV_C3"].isna().any():
+        raise AssertionError("Universo integrado contém setor sem ISAU-C3, contrariando o Gate 18G7E.")
 
     raw_dir = paths.raw / "ibge" / "censo2022" / "malha_setores"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -257,7 +267,10 @@ def executar(raiz: Path) -> None:
         "etapa": "09",
         "fonte_malha": MALHA_SP_URL,
         "crs_malha": str(espacial.crs),
-        "gate_compatibilidade_tematica": "PRIV_C3, POP_TOTAL e DPPO simultaneamente observáveis",
+        "gate_compatibilidade_tematica": (
+            "checkpoint canônico Gate 18G7E: interseção entre tipologia estrutural final e ISAU-C3"
+        ),
+        "checkpoint_universo_integrado": checkpoint_meta,
         "diagnostico_cobertura": diagnostico,
         "divergencias_gate_07_09": diverg_gate,
         "invariantes_topologicos": invariantes,
