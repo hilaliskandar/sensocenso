@@ -83,7 +83,7 @@ def _baixar_checkpoint(destino: Path) -> None:
 
     if destino.exists() and destino.stat().st_size > 0:
         try:
-            _validar_xlsx(destino)
+            _validar_xlsx(destino, tamanho_minimo=1)
         except Exception as exc:
             _gravar_json(
                 diagnostico_path,
