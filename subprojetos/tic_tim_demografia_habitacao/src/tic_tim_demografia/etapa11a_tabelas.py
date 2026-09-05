@@ -90,7 +90,16 @@ def construir_t06(familias: pd.DataFrame) -> pd.DataFrame:
         raise AssertionError(f"T06 exige 8.073 setores integrados; obtidos={len(integrado)}")
     integrado["POP_TOTAL"] = pd.to_numeric(integrado["POP_TOTAL"], errors="coerce")
     integrado["DPPO"] = pd.to_numeric(integrado["DPPO"], errors="coerce")
-    integrado["conv"] = pd.to_numeric(integrado["CONVERGENCIA_3_OU_4"], errors="coerce").eq(1)
+    # CONVERGENCIA_3_OU_4 é triestado na etapa 07: 1=convergente,
+    # 0=não convergente, NA=indeterminado por cobertura. Para a T06, apenas
+    # o valor explicitamente igual a 1 entra no numerador; NA permanece fora
+    # do numerador, mas o setor continua pertencendo ao denominador integrado.
+    integrado["conv"] = (
+        pd.to_numeric(integrado["CONVERGENCIA_3_OU_4"], errors="coerce")
+        .eq(1)
+        .fillna(False)
+        .astype(bool)
+    )
     integrado["pop_conv"] = integrado["POP_TOTAL"].where(integrado["conv"], 0)
     integrado["dppo_conv"] = integrado["DPPO"].where(integrado["conv"], 0)
     integrado["setor_conv"] = integrado["conv"].astype("int64")
