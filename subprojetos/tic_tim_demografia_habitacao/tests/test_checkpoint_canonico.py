@@ -12,6 +12,10 @@ from tic_tim_demografia.checkpoint_canonico import (
     escrever_checkpoint_canonico,
     materializar_checkpoint_de_fonte,
 )
+from tic_tim_demografia.checkpoint_compactado import (
+    PUBLIC_CHECKPOINT_SOURCE,
+    carregar_checkpoint_compactado_versionado,
+)
 
 
 def _canonico_sintetico() -> pd.DataFrame:
@@ -115,3 +119,17 @@ def test_manifesto_divergente_e_rejeitado(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="Cardinalidade ou composição"):
         carregar_checkpoint_canonico_local(raw_root, esperado=4)
+
+
+def test_checkpoint_versionado_expoe_fonte_logica_portavel() -> None:
+    frame, diag = carregar_checkpoint_compactado_versionado()
+
+    assert len(frame) == 8073
+    assert diag["fonte_checkpoint"] == PUBLIC_CHECKPOINT_SOURCE
+    assert not Path(diag["fonte_checkpoint"]).is_absolute()
+
+    serializado = json.dumps(diag, ensure_ascii=False).lower()
+    assert "/home/" not in serializado
+    assert "\\users\\" not in serializado
+    assert "mydrive" not in serializado
+    assert "google drive" not in serializado

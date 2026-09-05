@@ -28,6 +28,7 @@ from .checkpoint_canonico import (
 )
 
 PARTS_DIRNAME = "payload_g7f2_b64"
+PUBLIC_CHECKPOINT_SOURCE = f"data/checkpoints/{PARTS_DIRNAME}"
 
 
 def caminho_payload_versionado() -> Path:
@@ -91,7 +92,7 @@ def carregar_checkpoint_compactado_versionado(
     diagnostico: dict[str, Any] = {
         "status": "ok",
         "checkpoint_id": CHECKPOINT_ID,
-        "fonte_checkpoint": str(parts_dir),
+        "fonte_checkpoint": PUBLIC_CHECKPOINT_SOURCE,
         "papel": "checkpoint_canonico_versionado_compactado",
         "formato_versionado": "gzip-base64-partes",
         "n_partes": len(partes),
