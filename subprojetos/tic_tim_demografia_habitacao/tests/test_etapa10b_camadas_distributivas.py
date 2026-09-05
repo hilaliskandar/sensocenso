@@ -7,6 +7,7 @@ from tic_tim_demografia.etapa10b_corrente import (
     _flag_fcu,
     _flag_rr,
     _rr,
+    _setores_fcu_xlsx,
 )
 
 
@@ -41,6 +42,23 @@ def test_agregar_fcu_usa_mesmo_universo_no_denominador():
     assert out.loc["10", "pop_fcu_urbana"] == 300
     assert out.loc["10", "pct_pop_urbana_em_fcu"] == 0.75
     assert out.loc["20", "pct_setores_urbanos_fcu"] == 1.0
+
+
+def test_setores_fcu_xlsx_conta_fcu_distintas_apos_intersecao(tmp_path):
+    path = tmp_path / "fcu.xlsx"
+    pd.DataFrame(
+        {
+            "CD_SETOR": ["1", "2", "3", "999", "998"],
+            "CD_FCU": ["A", "A", ".", "B", "C"],
+        }
+    ).to_excel(path, index=False)
+
+    setores, meta = _setores_fcu_xlsx(path, pd.Index(["1", "2", "3"]))
+
+    assert setores == {"1", "2"}
+    assert meta["setores_fcu_no_universo_30m"] == 2
+    assert meta["n_fcu_distintas"] == 1
+    assert meta["escopo_n_fcu_distintas"] == "universo_30m_intersecao_setorial"
 
 
 def test_rr_e_flags_sao_descritivos():

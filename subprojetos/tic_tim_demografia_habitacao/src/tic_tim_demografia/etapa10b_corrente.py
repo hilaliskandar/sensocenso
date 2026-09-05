@@ -127,16 +127,16 @@ def _setores_fcu_xlsx(path: Path, setores_urbanos: pd.Index) -> tuple[set[str], 
     if fcu_col is None:
         efetivo = cod.notna() & cod.ne("")
         modo = "linhas_da_tabela_oficial_de_setores_fcu"
-        n_fcu = None
     else:
         marcador = df[fcu_col].astype("string").str.strip()
         efetivo = cod.notna() & cod.ne("") & marcador.notna() & marcador.ne("") & marcador.ne(".")
         modo = "cd_fcu_efetivo; ponto_explicito_como_nao_fcu"
-        n_fcu = int(marcador.loc[efetivo].nunique())
 
-    selecionados = set(cod.loc[efetivo].astype(str)) & permitidos
+    no_universo = efetivo & cod.isin(permitidos)
+    selecionados = set(cod.loc[no_universo].astype(str))
     if not selecionados:
         raise ValueError("Nenhum setor FCU do arquivo oficial intersecta o universo urbano corrente.")
+    n_fcu = None if fcu_col is None else int(marcador.loc[no_universo].nunique())
     meta = {
         "planilha": planilha,
         "coluna_setor": setor_col,
@@ -145,6 +145,7 @@ def _setores_fcu_xlsx(path: Path, setores_urbanos: pd.Index) -> tuple[set[str], 
         "linhas_tabela": int(len(df)),
         "setores_fcu_no_universo_30m": int(len(selecionados)),
         "n_fcu_distintas": n_fcu,
+        "escopo_n_fcu_distintas": "universo_30m_intersecao_setorial",
     }
     return selecionados, meta
 
