@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib import pyplot as plt
+from matplotlib.patches import Patch
 
 from tic_tim_demografia.cartografia_setorial_dados import (
     categorizar_m08,
@@ -11,6 +13,7 @@ from tic_tim_demografia.cartografia_setorial_dados import (
     selecionar_insets_m06,
     selecionar_insets_m08,
 )
+from tic_tim_demografia.cartografia_setorial_plot import _inset_axes, _sidebar_legend
 
 
 def test_classificar_zero_mais_quantis_preserva_zero_positivos_e_ausencia():
@@ -107,3 +110,15 @@ def test_preparar_m12_exige_universo_e_componentes():
     duplicada.loc[1, "codigo_setor"] = "1"
     with pytest.raises(AssertionError):
         preparar_m12(duplicada, esperado=2)
+
+
+def test_sidebar_de_legenda_nao_sobrepoe_primeiro_inset():
+    fig = plt.figure()
+    _sidebar_legend(fig, [Patch(facecolor="0.5", label="Classe")], "Legenda")
+    inset = _inset_axes(fig, 0.50)
+    legenda = fig.axes[0].get_position()
+    primeiro_inset = inset.get_position()
+    try:
+        assert legenda.y0 > primeiro_inset.y1
+    finally:
+        plt.close(fig)
