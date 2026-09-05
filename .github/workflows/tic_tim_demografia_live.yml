@@ -91,6 +91,11 @@ jobs:
           set -o pipefail
           mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
           python scripts/run_pipeline.py --etapa 11c 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11c_execucao.log"
+      - name: Executa etapa 11d
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11d 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11d_execucao.log"
       - name: Lista artefatos
         if: always()
         run: |
