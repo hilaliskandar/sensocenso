@@ -4,11 +4,24 @@ import geopandas as gpd
 from shapely.geometry import box
 
 from tic_tim_demografia.cartografia_municipal_dados import (
+    FAMILIAS_PUBLICAS,
     classificar_quantis,
     dissolver_setores_municipais,
     montar_dados_municipais,
     predominancia_familias,
 )
+
+
+def test_familias_publicas_usam_nomenclatura_canonica_do_caderno_v14():
+    assert FAMILIAS_PUBLICAS == {
+        "F1": "Dinâmica do estoque domiciliar ocupado e renovação demográfica recente",
+        "F2": "Privação sanitário-ambiental censitariamente observável",
+        "F3": "Ausência de atributos selecionados do entorno urbano",
+        "F4": "Estrutura etária e arranjos domiciliares",
+    }
+    texto = " ".join(FAMILIAS_PUBLICAS.values()).casefold()
+    assert "adaptação demográfica" not in texto
+    assert "adaptação do estoque" not in texto
 
 
 def test_classificar_quantis_preserva_ausencia_e_limites():

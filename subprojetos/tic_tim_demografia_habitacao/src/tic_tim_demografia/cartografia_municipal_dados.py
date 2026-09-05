@@ -11,10 +11,10 @@ from .etapa09 import _coluna_setor
 
 DISPLAY_CRS = "EPSG:31983"
 FAMILIAS_PUBLICAS = {
-    "F1": "Formação e renovação de domicílios",
-    "F2": "Melhoria ou substituição do estoque",
-    "F3": "Urbanização e qualificação do entorno",
-    "F4": "Adaptação do estoque às mudanças demográficas",
+    "F1": "Dinâmica do estoque domiciliar ocupado e renovação demográfica recente",
+    "F2": "Privação sanitário-ambiental censitariamente observável",
+    "F3": "Ausência de atributos selecionados do entorno urbano",
+    "F4": "Estrutura etária e arranjos domiciliares",
 }
 
 

@@ -30,14 +30,16 @@ No M01, municípios com crescimento negativo recebem hachura adicional para que 
 
 ## Regra do M14
 
-O M14 sintetiza as quatro famílias analíticas públicas:
+O M14 sintetiza as quatro famílias analíticas públicas com a nomenclatura canônica do Caderno Metodológico público v1.4:
 
-- F1 — Formação e renovação de domicílios;
-- F2 — Melhoria ou substituição do estoque;
-- F3 — Urbanização e qualificação do entorno;
-- F4 — Adaptação do estoque às mudanças demográficas.
+- F1 — Dinâmica do estoque domiciliar ocupado e renovação demográfica recente;
+- F2 — Privação sanitário-ambiental censitariamente observável;
+- F3 — Ausência de atributos selecionados do entorno urbano;
+- F4 — Estrutura etária e arranjos domiciliares.
 
-Para cada município, calcula-se a participação de setores sinalizados entre os setores observados de cada família dentro do universo integrado. A dimensão predominante é a de maior participação municipal. Empates numéricos são preservados como combinações, por exemplo `F1+F4`; não há desempate arbitrário. As categorias são descritivas e não representam hierarquia, gravidade ou prioridade normativa.
+A nomenclatura descreve diretamente o que os indicadores observam. Em particular, F4 não é tratada como “adaptação demográfica”, pois envelhecimento e arranjos domiciliares caracterizam estrutura e mudança populacional e não uma resposta adaptativa já realizada.
+
+Para cada município, calcula-se a participação de setores sinalizados entre os setores observados de cada família dentro do universo integrado. A família predominante é a de maior participação municipal. Empates numéricos são preservados como combinações, por exemplo `F1+F4`; não há desempate arbitrário. As categorias são descritivas e não representam hierarquia, gravidade ou prioridade normativa.
 
 ## Saídas
 
@@ -55,7 +57,7 @@ A etapa grava:
 - `processed/espacial/base_cartografia_municipal_30.parquet`;
 - `outputs/qa/etapa11c_cartografia_municipal.json`.
 
-O QA registra a fonte da geometria, CRS de origem e de renderização, método de dissolução, limites das classes de cada mapa contínuo, contagem de valores válidos/ausentes, categorias do M14, empates e lista completa de saídas.
+O QA registra a fonte da geometria, CRS de origem e de renderização, método de dissolução, limites das classes de cada mapa contínuo, contagem de valores válidos/ausentes, categorias do M14, empates, nomenclatura pública das famílias e lista completa de saídas.
 
 ## Regras de aceite
 
@@ -65,5 +67,6 @@ O QA registra a fonte da geometria, CRS de origem e de renderização, método d
 4. Indicadores municipais derivados exclusivamente das bases validadas do pipeline.
 5. Classes contínuas e seus limites registrados no QA.
 6. Empates no M14 preservados explicitamente.
-7. Título acima, fonte e nota abaixo, unidade/legenda autossuficientes, escala gráfica e orientação cartográfica.
-8. Saídas PNG e SVG determinísticas, acompanhadas da base tabular e da base espacial reproduzível.
+7. Nomenclatura de F1–F4 idêntica à especificação pública do Caderno Metodológico v1.4.
+8. Título acima, fonte e nota abaixo, unidade/legenda autossuficientes, escala gráfica e orientação cartográfica.
+9. Saídas PNG e SVG determinísticas, acompanhadas da base tabular e da base espacial reproduzível.
