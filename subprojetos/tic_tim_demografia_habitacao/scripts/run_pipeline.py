@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Orquestrador do pipeline TIC–TIM de demografia e habitação.
 
-As etapas são implementadas incrementalmente. Nas etapas 07–11a existem modos
+As etapas são implementadas incrementalmente. Nas etapas 07–11b existem modos
 explícitos: ``corrente`` usa fontes públicas atuais com checkpoint territorial
 histórico imutável quando necessário e registra deriva de edição;
 ``historico`` mantém os gates numéricos rígidos do fechamento original.
@@ -24,7 +24,7 @@ from tic_tim_demografia import (  # noqa: E402
     etapa00, etapa01, etapa02, etapa02b, etapa02c, etapa03a, etapa03b, etapa03c,
     etapa04, etapa05a, etapa05b, etapa05c, etapa05d, etapa05e, etapa06a, etapa06b,
     etapa07, etapa07_corrente, etapa08, etapa08_corrente, etapa09, etapa09_corrente,
-    etapa10_corrente, etapa10b_corrente, etapa11a_tabelas,
+    etapa10_corrente, etapa10b_corrente, etapa11a_tabelas, etapa11b_graficos,
 )
 
 
@@ -92,6 +92,12 @@ def etapas_para_modo(modo: str) -> list[Etapa]:
                 ainda_nao_implementada("tabelas públicas — regressão histórica"),
                 False,
             ),
+            Etapa(
+                "11b",
+                "gráficos públicos — regressão histórica",
+                ainda_nao_implementada("gráficos públicos — regressão histórica"),
+                False,
+            ),
         ]
     else:
         analiticas = [
@@ -101,6 +107,7 @@ def etapas_para_modo(modo: str) -> list[Etapa]:
             Etapa("10", "sínteses municipais e correlações — fontes correntes", etapa10_corrente.executar),
             Etapa("10b", "camadas distributivas raça/cor, FCU e arranjo doméstico — fontes correntes", etapa10b_corrente.executar),
             Etapa("11a", "tabelas públicas reprodutíveis — fontes correntes", etapa11a_tabelas.executar),
+            Etapa("11b", "gráficos públicos reprodutíveis — fontes correntes", etapa11b_graficos.executar),
         ]
     return ETAPAS_BASE + analiticas + ETAPAS_FINAIS
 
@@ -115,7 +122,7 @@ def main() -> None:
             "historico: exige regressão numérica integral do fechamento original"
         ),
     )
-    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09", "10", "10b", "11a"]
+    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09", "10", "10b", "11a", "11b"]
     parser.add_argument("--etapa", choices=sorted(set(codigos)) + ["implementadas", "todas"], default="implementadas")
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
