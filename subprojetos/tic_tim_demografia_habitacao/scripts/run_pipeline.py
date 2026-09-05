@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Orquestrador do pipeline TIC–TIM de demografia e habitação.
 
-As etapas são implementadas incrementalmente. Nas etapas 07–11e existem modos
+As etapas são implementadas incrementalmente. Nas etapas 07–12 existem modos
 explícitos: ``corrente`` usa fontes públicas atuais com checkpoint territorial
 histórico imutável quando necessário e registra deriva de edição;
 ``historico`` mantém os gates numéricos rígidos do fechamento original.
@@ -26,7 +26,7 @@ from tic_tim_demografia import (  # noqa: E402
     etapa07, etapa07_corrente, etapa08, etapa08_corrente, etapa09, etapa09_corrente,
     etapa10_corrente, etapa10b_corrente, etapa11a_tabelas, etapa11b_graficos,
     etapa11c_cartografia_municipal, etapa11d_cartografia_setorial,
-    etapa11e_manifesto_visual,
+    etapa11e_manifesto_visual, etapa12_qa_final,
 )
 
 
@@ -66,7 +66,6 @@ ETAPAS_BASE = [
 ]
 ETAPAS_FINAIS = [
     Etapa("11", "conjunto completo de tabelas, gráficos e mapas", ainda_nao_implementada("conjunto completo de tabelas, gráficos e mapas"), False),
-    Etapa("12", "QA final", ainda_nao_implementada("QA final"), False),
 ]
 
 
@@ -118,6 +117,12 @@ def etapas_para_modo(modo: str) -> list[Etapa]:
                 ainda_nao_implementada("manifesto visual e QA de cobertura — regressão histórica"),
                 False,
             ),
+            Etapa(
+                "12",
+                "QA final — regressão histórica",
+                ainda_nao_implementada("QA final — regressão histórica"),
+                False,
+            ),
         ]
     else:
         analiticas = [
@@ -131,6 +136,7 @@ def etapas_para_modo(modo: str) -> list[Etapa]:
             Etapa("11c", "cartografia municipal reprodutível — fontes correntes", etapa11c_cartografia_municipal.executar),
             Etapa("11d", "cartografia setorial e prancha do entorno — fontes correntes", etapa11d_cartografia_setorial.executar),
             Etapa("11e", "manifesto visual e QA de cobertura — fontes correntes", etapa11e_manifesto_visual.executar),
+            Etapa("12", "QA final de reprodutibilidade — edição corrente", etapa12_qa_final.executar),
         ]
     return ETAPAS_BASE + analiticas + ETAPAS_FINAIS
 
@@ -145,7 +151,7 @@ def main() -> None:
             "historico: exige regressão numérica integral do fechamento original"
         ),
     )
-    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09", "10", "10b", "11a", "11b", "11c", "11d", "11e"]
+    codigos = [e.codigo for e in ETAPAS_BASE + ETAPAS_FINAIS] + ["07", "08", "09", "10", "10b", "11a", "11b", "11c", "11d", "11e", "12"]
     parser.add_argument("--etapa", choices=sorted(set(codigos)) + ["implementadas", "todas"], default="implementadas")
     parser.add_argument("--listar", action="store_true")
     args = parser.parse_args()
