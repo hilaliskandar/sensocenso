@@ -28,6 +28,10 @@ jobs:
           cache: pip
       - name: Instala dependencias
         run: python -m pip install -e '.[dev]'
+      - name: Registra ambiente Python
+        run: |
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python -c "import sys, pandas, pyarrow, openpyxl; print('python=' + sys.version.replace(chr(10), ' ')); print('pandas=' + pandas.__version__); print('pyarrow=' + pyarrow.__version__); print('openpyxl=' + openpyxl.__version__)" | tee "$TIC_TIM_DATA_ROOT/outputs/qa/ambiente_python.txt"
       - name: Executa testes offline
         run: pytest -q
       - name: Executa etapa 00
@@ -73,7 +77,10 @@ jobs:
       - name: Executa etapa 10b
         run: python scripts/run_pipeline.py --etapa 10b
       - name: Executa etapa 11a
-        run: python scripts/run_pipeline.py --etapa 11a
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11a 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11a_execucao.log"
       - name: Lista artefatos
         if: always()
         run: |
