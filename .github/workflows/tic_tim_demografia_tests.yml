@@ -1,0 +1,30 @@
+name: TIC-TIM demografia - testes
+
+on:
+  push:
+    paths:
+      - 'subprojetos/tic_tim_demografia_habitacao/**'
+      - '.github/workflows/tic_tim_demografia_tests.yml'
+  pull_request:
+    paths:
+      - 'subprojetos/tic_tim_demografia_habitacao/**'
+      - '.github/workflows/tic_tim_demografia_tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: subprojetos/tic_tim_demografia_habitacao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Instala dependências de teste
+        run: python -m pip install -e '.[dev]'
+      - name: Executa testes offline
+        run: pytest -q
+      - name: Valida universo e estrutura de diretórios
+        run: python scripts/run_pipeline.py --etapa 00

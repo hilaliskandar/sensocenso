@@ -1,0 +1,56 @@
+projeto:
+  nome: TIC-TIM Demografia e Habitação
+  versao_pipeline: 0.1.0-dev
+  anos_censitarios: [2000, 2010, 2022]
+
+territorializacao:
+  percentil_principal: 0.75
+  percentil_sensibilidade: 0.80
+  minimo_familias_convergencia: 3
+  total_familias: 4
+
+espacial:
+  crs_origem_ibge: EPSG:4674
+  vizinhanca: queen
+  permutacoes_moran: 499
+
+qa_referencia:
+  setores_universo_final: 8073
+  setores_convergencia_p75: 1255
+  populacao_convergencia_p75: 570447
+  dpo_convergencia_p75: 197714
+  setores_persistentes_p80: 959
+  setores_mesmo_vetor_p80: 886
+  moran_privacao_aprox: 0.3507
+  moran_pvalor: 0.002
+  limiares_p75:
+    crescimento_dpo: 0.4798
+    divergencia_dpo_pop: 0.2955
+    cwr: 242.1053
+    privacao: 0.16036
+    re_60_0_14: 96.6054
+    unipessoais: 0.17316
+    resp_mulher_sem_conjuge: 0.70370
+    sem_bueiro: 0.60918
+    sem_calcada: 0.00840
+    sem_pavimentacao: 0.0
+    sem_iluminacao: 0.0
+    sem_arvores: 0.24652
+  limiares_p80:
+    crescimento_dpo: 0.54772
+    divergencia_dpo_pop: 0.31019
+    cwr: 254.2765
+    privacao: 0.17884
+    re_60_0_14: 101.9565
+    unipessoais: 0.17680
+    resp_mulher_sem_conjuge: 0.71429
+    sem_bueiro: 0.71677
+    sem_calcada: 0.03117
+    sem_pavimentacao: 0.0
+    sem_iluminacao: 0.0
+    sem_arvores: 0.32619
+
+interpretacao:
+  convergencia_nao_e_deficit: true
+  convergencia_nao_e_ranking_prioridade: true
+  f1_f4_sinais_nao_sao_gravidade: true

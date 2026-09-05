@@ -1,0 +1,78 @@
+fontes:
+  sidra_2000_idade:
+    instituicao: "IBGE/SIDRA"
+    tabela: 1518
+    periodo: 2000
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/1518"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "estrutura etária municipal e harmonização 0–14, 15–59 e 60+"
+    regra: "situação do domicílio=Total; sexo=Total; não interpolar faixas"
+
+  sidra_2010_idade:
+    instituicao: "IBGE/SIDRA"
+    tabela: 3107
+    periodo: 2010
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/3107"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "estrutura etária municipal de 2010, complementada pela Sinopse quando necessário"
+
+  sidra_2000_2010_domicilios:
+    instituicao: "IBGE/SIDRA"
+    tabela: 156
+    periodo: "2000, 2010"
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/156"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "domicílios, moradores no universo domiciliar compatível e tamanho médio histórico"
+    regra: "resolver variáveis e situação Total a partir do descritor; não presumir equivalência com população residente total"
+
+  sidra_2000_2010_unipessoais:
+    instituicao: "IBGE/SIDRA"
+    tabela: 185
+    periodo: "2000, 2010"
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/185"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "distribuição dos domicílios por número de moradores e domicílios unipessoais"
+    regra: "resolver estruturalmente a dimensão número de moradores; usar categoria de 1 morador e denominador compatível"
+
+  censo2022_agregados_setor:
+    instituicao: "IBGE"
+    periodo: 2022
+    discovery_url: "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/Agregados_por_Setor_csv/"
+    parent_discovery_url: "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/"
+    uso: "população, domicílios e variáveis setoriais do universo"
+    regra: "congelar snapshot do índice, registrar edição, dicionário e hash de cada arquivo bruto usado"
+
+  censo2022_entorno_setor:
+    instituicao: "IBGE"
+    periodo: 2022
+    discovery_url: "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv/"
+    parent_discovery_url: "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/"
+    uso: "atributos urbanísticos do entorno: bueiro/boca de lobo, calçada, pavimentação, iluminação e arborização"
+    regra: "congelar snapshot do índice antes do download e nunca selecionar arquivo apenas pelo nome sem registrar URL final"
+
+  censo2022_fcu:
+    instituicao: "IBGE"
+    periodo: 2022
+    discovery_url: "https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Favelas_e_comunidades_urbanas_Resultados_do_universo/"
+    uso: "camada distributiva complementar; não compõe F1–F4"
+
+  censo2022_cnefe_municipios:
+    instituicao: "IBGE"
+    periodo: 2022
+    discovery_url: "https://ftp.ibge.gov.br/Cadastro_Nacional_de_Enderecos_para_Fins_Estatisticos/Censo_Demografico_2022/Arquivos_CNEFE/"
+    uso: "base auxiliar espacial; baixar apenas quando exigido por etapa específica"
+
+politica_aquisicao:
+  preservar_bruto: true
+  calcular_sha256: true
+  registrar_url_final: true
+  registrar_data_hora_utc: true
+  congelar_snapshot_indices: true
+  substituir_silenciosamente: false
+  preferir_download_em_lote: true
+  recortar_por_codigos_municipais_apos_download: true
+  arquivos_brutos_fora_git: true

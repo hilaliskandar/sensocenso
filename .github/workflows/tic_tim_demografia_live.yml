@@ -1,0 +1,139 @@
+name: TIC-TIM demografia live
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/tic_tim_demografia_live.yml'
+      - 'subprojetos/tic_tim_demografia_habitacao/**'
+  pull_request:
+    paths:
+      - '.github/workflows/tic_tim_demografia_live.yml'
+      - 'subprojetos/tic_tim_demografia_habitacao/**'
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: subprojetos/tic_tim_demografia_habitacao
+    env:
+      TIC_TIM_DATA_ROOT: /tmp/tic_tim_demografia_data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Instala dependencias
+        run: python -m pip install -e '.[dev]'
+      - name: Registra ambiente Python
+        run: |
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python -c "import sys, pandas, pyarrow, openpyxl; print('python=' + sys.version.replace(chr(10), ' ')); print('pandas=' + pandas.__version__); print('pyarrow=' + pyarrow.__version__); print('openpyxl=' + openpyxl.__version__)" | tee "$TIC_TIM_DATA_ROOT/outputs/qa/ambiente_python.txt"
+      - name: Executa testes offline
+        run: pytest -q
+      - name: Executa etapa 00
+        run: python scripts/run_pipeline.py --etapa 00
+      - name: Executa etapa 01
+        run: python scripts/run_pipeline.py --etapa 01
+      - name: Executa etapa 02a
+        run: python scripts/run_pipeline.py --etapa 02a
+      - name: Executa etapa 02b
+        run: python scripts/run_pipeline.py --etapa 02b
+      - name: Executa etapa 02c
+        run: python scripts/run_pipeline.py --etapa 02c
+      - name: Executa etapa 03a
+        run: python scripts/run_pipeline.py --etapa 03a
+      - name: Executa etapa 03b
+        run: python scripts/run_pipeline.py --etapa 03b
+      - name: Executa etapa 03c
+        run: python scripts/run_pipeline.py --etapa 03c
+      - name: Executa etapa 04
+        run: python scripts/run_pipeline.py --etapa 04
+      - name: Executa etapa 05a
+        run: python scripts/run_pipeline.py --etapa 05a
+      - name: Executa etapa 05b
+        run: python scripts/run_pipeline.py --etapa 05b
+      - name: Executa etapa 05c
+        run: python scripts/run_pipeline.py --etapa 05c
+      - name: Executa etapa 05d
+        run: python scripts/run_pipeline.py --etapa 05d
+      - name: Executa etapa 05e
+        run: python scripts/run_pipeline.py --etapa 05e
+      - name: Executa etapa 06a
+        run: python scripts/run_pipeline.py --etapa 06a
+      - name: Executa etapa 06b
+        run: python scripts/run_pipeline.py --etapa 06b
+      - name: Executa etapa 07
+        run: python scripts/run_pipeline.py --etapa 07
+      - name: Executa etapa 08
+        run: python scripts/run_pipeline.py --etapa 08
+      - name: Executa etapa 09
+        run: python scripts/run_pipeline.py --etapa 09
+      - name: Executa etapa 10
+        run: python scripts/run_pipeline.py --etapa 10
+      - name: Executa etapa 10b
+        run: python scripts/run_pipeline.py --etapa 10b
+      - name: Executa etapa 11a
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11a 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11a_execucao.log"
+      - name: Executa etapa 11b
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11b 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11b_execucao.log"
+      - name: Executa etapa 11c
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11c 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11c_execucao.log"
+      - name: Executa etapa 11d
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11d 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11d_execucao.log"
+      - name: Executa etapa 11e
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 11e 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa11e_execucao.log"
+      - name: Executa etapa 12
+        run: |
+          set -o pipefail
+          mkdir -p "$TIC_TIM_DATA_ROOT/outputs/qa"
+          python scripts/run_pipeline.py --etapa 12 2>&1 | tee "$TIC_TIM_DATA_ROOT/outputs/qa/etapa12_execucao.log"
+      - name: Lista artefatos
+        if: always()
+        run: |
+          find /tmp/tic_tim_demografia_data/outputs/qa -maxdepth 3 -type f -print || true
+          find /tmp/tic_tim_demografia_data/outputs/tables -maxdepth 3 -type f -print || true
+          find /tmp/tic_tim_demografia_data/outputs/graphs -maxdepth 3 -type f -print || true
+          find /tmp/tic_tim_demografia_data/outputs/maps -maxdepth 3 -type f -print || true
+          find /tmp/tic_tim_demografia_data/outputs/data -maxdepth 4 -type f -print || true
+          find /tmp/tic_tim_demografia_data/metadata -maxdepth 3 -type f -print || true
+          find /tmp/tic_tim_demografia_data/raw/checkpoints -maxdepth 2 -type f -print || true
+          find /tmp/tic_tim_demografia_data/processed/municipal -maxdepth 2 -type f -print || true
+          find /tmp/tic_tim_demografia_data/processed/setorial -maxdepth 2 -type f -print || true
+          find /tmp/tic_tim_demografia_data/processed/espacial -maxdepth 2 -type f -print || true
+      - name: Publica QA e bases analiticas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-demografia-live
+          path: |
+            /tmp/tic_tim_demografia_data/outputs/qa/**
+            /tmp/tic_tim_demografia_data/outputs/tables/**
+            /tmp/tic_tim_demografia_data/outputs/graphs/**
+            /tmp/tic_tim_demografia_data/outputs/maps/**
+            /tmp/tic_tim_demografia_data/outputs/data/**
+            /tmp/tic_tim_demografia_data/metadata/**
+            /tmp/tic_tim_demografia_data/raw/checkpoints/**
+            /tmp/tic_tim_demografia_data/processed/municipal/**
+            /tmp/tic_tim_demografia_data/processed/setorial/**
+            /tmp/tic_tim_demografia_data/processed/espacial/**
+          if-no-files-found: warn
+          retention-days: 14

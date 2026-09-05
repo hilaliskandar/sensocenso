@@ -1,0 +1,48 @@
+name: TIC-TIM demografia - integração fontes
+
+on:
+  workflow_dispatch:
+
+jobs:
+  integracao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: subprojetos/tic_tim_demografia_habitacao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Instala dependências
+        run: python -m pip install -e '.[dev]'
+      - name: Executa testes offline
+        run: pytest -q
+      - name: Reconstrói série longitudinal até 2022
+        env:
+          TIC_TIM_DATA_ROOT: ${{ runner.temp }}/tic_tim_demografia_data
+        run: |
+          python scripts/run_pipeline.py --etapa 00
+          python scripts/run_pipeline.py --etapa 01
+          python scripts/run_pipeline.py --etapa 02a
+          python scripts/run_pipeline.py --etapa 02b
+          python scripts/run_pipeline.py --etapa 02c
+      - name: Resume QA produzido
+        if: always()
+        env:
+          TIC_TIM_DATA_ROOT: ${{ runner.temp }}/tic_tim_demografia_data
+        run: |
+          find "$TIC_TIM_DATA_ROOT/outputs/qa" -maxdepth 2 -type f -print 2>/dev/null || true
+          for f in "$TIC_TIM_DATA_ROOT"/outputs/qa/*.json; do
+            [ -f "$f" ] && { echo "===== $f ====="; cat "$f"; }
+          done
+      - name: Publica artefatos de QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-demografia-qa
+          path: ${{ runner.temp }}/tic_tim_demografia_data/outputs/qa/
+          if-no-files-found: warn
+          retention-days: 14

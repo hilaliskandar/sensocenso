@@ -1,0 +1,289 @@
+name: TIC-TIM materializa checkpoint G7F2
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-demografia-pipeline
+    paths:
+      - '.github/workflows/tic_tim_materializa_checkpoint_g7f2.yml'
+permissions:
+  contents: read
+jobs:
+  materializa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: subprojetos/tic_tim_demografia_habitacao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Instala dependencias
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pip install gdown openpyxl
+      - name: Recupera planilhas Google historicas e derivadas auditadas
+        shell: bash
+        run: |
+          set -u
+          mkdir -p /tmp/g7f2_materializacao/fontes /tmp/g7f2_materializacao/checkpoint /tmp/g7f2_materializacao/diagnosticos
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          out = Path('/tmp/g7f2_materializacao')
+          fontes = out / 'fontes'
+          diagnosticos = out / 'diagnosticos'
+          sheets = [
+              (
+                  'g7f2_primario',
+                  'Gate18G7F2 Google Sheet',
+                  '1QdVlkhE5P2dtiTInSIDGiLHFj1VJACaW1705ta53oS0',
+                  'TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx',
+              ),
+              (
+                  'territorializacao_4_familias',
+                  'Derivado auditado territorializacao 4 familias',
+                  '1B2RaxEM4oiVoalJEZ7jSy0aci7ce0FdrjXxvHTF1bLE',
+                  'TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSIDADES_CENSITARIAS_v1.xlsx',
+              ),
+              (
+                  'padroes_4_familias',
+                  'Derivado auditado padroes recorrentes 4 familias',
+                  '1oN3aMhOi4gT-hHyDEuabrk8drE-LBt4gtQwQxUwXdng',
+                  'TIC_TIM_PADROES_RECORRENTES_4_FAMILIAS_CENSITARIAS_v1.xlsx',
+              ),
+              (
+                  'g13_downstream',
+                  'Gate18G13 derivado auditado com MACRO_FINAL e ISAU_C3',
+                  '1zzDNKOvZggG_KKPXJkhbk61VSB5WPziG9UwdSYgac4E',
+                  'TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.xlsx',
+              ),
+          ]
+          resumo = []
+          for chave, nome, sheet_id, filename in sheets:
+              url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx'
+              meta = {'chave': chave, 'fonte': nome, 'sheet_id': sheet_id, 'url': url}
+              try:
+                  r = requests.get(url, timeout=180, allow_redirects=True)
+                  meta.update({
+                      'status_code': r.status_code,
+                      'url_final': r.url,
+                      'content_type': r.headers.get('content-type'),
+                      'bytes': len(r.content),
+                  })
+                  if r.ok and r.content[:2] == b'PK':
+                      (fontes / filename).write_bytes(r.content)
+                      meta['status'] = 'ok'
+                      meta['arquivo'] = filename
+                  else:
+                      meta['status'] = 'erro'
+                      ctype = (r.headers.get('content-type') or '').lower()
+                      meta['prefixo'] = r.text[:500] if 'text' in ctype else repr(r.content[:100])
+              except Exception as exc:
+                  meta.update({'status': 'erro', 'erro_tipo': type(exc).__name__, 'erro': str(exc)})
+              (diagnosticos / f'download_{chave}.json').write_text(
+                  json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8'
+              )
+              resumo.append(meta)
+              print(json.dumps(meta, ensure_ascii=False, indent=2))
+          (diagnosticos / 'downloads_planilhas_resumo.json').write_text(
+              json.dumps(resumo, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          PY
+      - name: Tenta Gate18G13 por endpoint GViz CSV
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+
+          root = Path('/tmp/g7f2_materializacao')
+          fontes = root / 'fontes'
+          diagnosticos = root / 'diagnosticos'
+          sheet_id = '1zzDNKOvZggG_KKPXJkhbk61VSB5WPziG9UwdSYgac4E'
+          url = (
+              f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq'
+              '?tqx=out:csv&sheet=02_BASE_SETORIAL'
+          )
+          meta = {'chave': 'g13_gviz_csv', 'sheet_id': sheet_id, 'url': url}
+          try:
+              r = requests.get(url, timeout=180, allow_redirects=True)
+              texto = r.text
+              meta.update({
+                  'status_code': r.status_code,
+                  'url_final': r.url,
+                  'content_type': r.headers.get('content-type'),
+                  'bytes': len(r.content),
+                  'prefixo': texto[:300],
+              })
+              cabecalho_ok = 'CD_SETOR' in texto[:2000] and 'MACRO_FINAL' in texto[:2000] and 'ISAU_C3' in texto[:2000]
+              if r.ok and cabecalho_ok:
+                  destino = fontes / 'TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.csv'
+                  destino.write_text(texto, encoding='utf-8')
+                  meta.update({'status': 'ok', 'arquivo': destino.name})
+              else:
+                  meta['status'] = 'erro'
+                  meta['cabecalho_semantico_ok'] = cabecalho_ok
+          except Exception as exc:
+              meta.update({'status': 'erro', 'erro_tipo': type(exc).__name__, 'erro': str(exc)})
+          (diagnosticos / 'download_g13_gviz_csv.json').write_text(
+              json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8'
+          )
+          print(json.dumps(meta, ensure_ascii=False, indent=2))
+          PY
+      - name: Recupera GeoPackages historicos e derivados auditados
+        shell: bash
+        run: |
+          set -u
+          gdown 1zR6RGIPXZqDG36IB1ItCPEhIk4__F2ub -O /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg > /tmp/g7f2_materializacao/diagnosticos/gdown_g7f2_stdout.txt 2> /tmp/g7f2_materializacao/diagnosticos/gdown_g7f2_stderr.txt || true
+          gdown 1KODHLTvDogPndnL8NZi5P5ooXIeJhkUL -O /tmp/g7f2_materializacao/fontes/TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSIDADES_CENSITARIAS_v1.gpkg > /tmp/g7f2_materializacao/diagnosticos/gdown_territorializacao_stdout.txt 2> /tmp/g7f2_materializacao/diagnosticos/gdown_territorializacao_stderr.txt || true
+          ls -lah /tmp/g7f2_materializacao/fontes | tee /tmp/g7f2_materializacao/diagnosticos/listagem_fontes.txt
+      - name: Inspeciona fontes recuperadas
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          root = Path('/tmp/g7f2_materializacao')
+          fontes = root / 'fontes'
+          out = root / 'diagnosticos' / 'inspecao_fontes.json'
+          resultado = []
+          aliases_setor = {'CDSETOR', 'CDSETOR2022', 'CODIGOSETOR', 'CODSETOR'}
+
+          def norm(x):
+              return ''.join(ch for ch in str(x).upper() if ch.isalnum())
+
+          for p in sorted(fontes.iterdir()):
+              item = {'arquivo': p.name, 'bytes': p.stat().st_size}
+              try:
+                  if p.suffix.lower() == '.xlsx':
+                      xls = pd.ExcelFile(p)
+                      item['sheets'] = xls.sheet_names
+                      cand = []
+                      for sheet in xls.sheet_names:
+                          amostra = pd.read_excel(p, sheet_name=sheet, nrows=5)
+                          cols = [str(c) for c in amostra.columns]
+                          ncols = {norm(c): c for c in cols}
+                          setor_cols = [orig for n, orig in ncols.items() if n in aliases_setor]
+                          if setor_cols:
+                              df = pd.read_excel(p, sheet_name=sheet, dtype={setor_cols[0]: 'string'})
+                              s = df[setor_cols[0]].astype('string').str.replace(r'\\.0$', '', regex=True).str.strip()
+                              valido = s.str.fullmatch(r'\\d{15}', na=False)
+                              cand.append({
+                                  'sheet': sheet,
+                                  'coluna_setor': setor_cols[0],
+                                  'linhas': len(df),
+                                  'setores_validos_15d': int(valido.sum()),
+                                  'setores_unicos_15d': int(s[valido].nunique()),
+                                  'colunas': cols,
+                              })
+                      item['candidatos_setor'] = cand
+                  elif p.suffix.lower() == '.csv':
+                      df = pd.read_csv(p, dtype='string')
+                      cols = [str(c) for c in df.columns]
+                      ncols = {norm(c): c for c in cols}
+                      setor_cols = [orig for n, orig in ncols.items() if n in aliases_setor]
+                      item['colunas'] = cols
+                      item['linhas'] = len(df)
+                      if setor_cols:
+                          s = df[setor_cols[0]].astype('string').str.replace(r'\\.0$', '', regex=True).str.strip()
+                          valido = s.str.fullmatch(r'\\d{15}', na=False)
+                          item['candidatos_setor'] = [{
+                              'coluna_setor': setor_cols[0],
+                              'linhas': len(df),
+                              'setores_validos_15d': int(valido.sum()),
+                              'setores_unicos_15d': int(s[valido].nunique()),
+                              'colunas': cols,
+                          }]
+                  elif p.suffix.lower() == '.gpkg':
+                      import geopandas as gpd
+                      import fiona
+                      layers = list(fiona.listlayers(p))
+                      item['layers'] = layers
+                      cand = []
+                      for layer in layers:
+                          gdf = gpd.read_file(p, layer=layer)
+                          cols = [str(c) for c in gdf.columns]
+                          ncols = {norm(c): c for c in cols}
+                          setor_cols = [orig for n, orig in ncols.items() if n in aliases_setor]
+                          if setor_cols:
+                              s = gdf[setor_cols[0]].astype('string').str.replace(r'\\.0$', '', regex=True).str.strip()
+                              valido = s.str.fullmatch(r'\\d{15}', na=False)
+                              cand.append({
+                                  'layer': layer,
+                                  'coluna_setor': setor_cols[0],
+                                  'linhas': len(gdf),
+                                  'setores_validos_15d': int(valido.sum()),
+                                  'setores_unicos_15d': int(s[valido].nunique()),
+                                  'colunas': cols,
+                              })
+                      item['candidatos_setor'] = cand
+                  item['status'] = 'ok'
+              except Exception as exc:
+                  item.update({'status': 'erro', 'erro_tipo': type(exc).__name__, 'erro': str(exc)})
+              resultado.append(item)
+          out.write_text(json.dumps(resultado, ensure_ascii=False, indent=2), encoding='utf-8')
+          print(json.dumps(resultado, ensure_ascii=False, indent=2))
+          PY
+      - name: Materializa checkpoint da primeira fonte auditada valida
+        id: materializa
+        shell: bash
+        run: |
+          set -u
+          rm -rf /tmp/g7f2_materializacao/checkpoint/*
+          for f in \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.xlsx \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G7F2_VALIDACAO_ESPACIAL_ISAU_v5.gpkg \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.csv \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_GATE18G13_TERRITORIALIZACAO_PUBLICA_V_VI_v1.0.xlsx \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSITADES_CENSITARIAS_v1.gpkg \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_TERRITORIALIZACAO_4_FAMILIAS_NECESSIDADES_CENSITARIAS_v1.xlsx \
+            /tmp/g7f2_materializacao/fontes/TIC_TIM_PADROES_RECORRENTES_4_FAMILIAS_CENSITARIAS_v1.xlsx
+          do
+            if [ -s "$f" ]; then
+              echo "Tentando $f" | tee -a /tmp/g7f2_materializacao/diagnosticos/tentativas_materializacao.txt
+              rm -rf /tmp/g7f2_materializacao/checkpoint/*
+              if python scripts/materializar_checkpoint_g7f2.py --fonte "$f" --destino /tmp/g7f2_materializacao/checkpoint >> /tmp/g7f2_materializacao/diagnosticos/tentativas_materializacao.txt 2>&1; then
+                echo "SUCESSO: $f" | tee /tmp/g7f2_materializacao/diagnosticos/fonte_selecionada.txt
+                exit 0
+              fi
+            fi
+          done
+          echo 'Nenhuma fonte auditada recuperada/materializada com sucesso.' >&2
+          exit 4
+      - name: Valida resultado
+        if: steps.materializa.outcome == 'success'
+        run: |
+          test -s /tmp/g7f2_materializacao/checkpoint/TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.csv
+          test -s /tmp/g7f2_materializacao/checkpoint/TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.manifest.json
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import pandas as pd
+          p = Path('/tmp/g7f2_materializacao/checkpoint/TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.csv')
+          df = pd.read_csv(p, dtype={'codigo_setor': 'string'})
+          assert len(df) == 8073
+          assert df.codigo_setor.nunique() == 8073
+          assert df.codigo_setor.str.fullmatch(r'\d{15}', na=False).all()
+          macro = df.macrotipo_checkpoint.value_counts().sort_index().to_dict()
+          assert macro == {2: 3568, 3: 3843, 4: 662}, macro
+          print('n=', len(df), 'unicos=', df.codigo_setor.nunique())
+          print('macro=', macro)
+          print(json.loads(p.with_name('TIC_TIM_UNIVERSO_INTEGRADO_CANONICO_G7F2.manifest.json').read_text(encoding='utf-8')))
+          PY
+      - name: Publica materializacao e diagnosticos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-checkpoint-g7f2-materializacao
+          path: /tmp/g7f2_materializacao/**
+          if-no-files-found: warn
+          retention-days: 7

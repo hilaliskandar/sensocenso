@@ -1,0 +1,40 @@
+# Diretórios do pipeline TIC–TIM.
+# Todos os caminhos são relativos à raiz do subprojeto, salvo se a variável
+# de ambiente TIC_TIM_DATA_ROOT for definida para externalizar o armazenamento.
+
+raiz_dados_padrao: data
+variavel_ambiente_raiz_dados: TIC_TIM_DATA_ROOT
+
+fontes:
+  brutas: raw
+  externas_manuais: external
+
+processamento:
+  intermediarios: interim
+  processados: processed
+
+resultados:
+  raiz: outputs
+  tabelas: tables
+  mapas: maps
+  dados: data
+  qa: qa
+  relatorios: reports
+
+metadados:
+  raiz: metadata
+  manifestos: manifests
+  hashes: hashes
+  logs: logs
+
+cache: cache
+
+politica:
+  caminhos_absolutos_em_codigo: proibidos
+  dependencias_drive: proibidas
+  dependencias_usuario_local: proibidas
+  fontes_publicas_reobitiveis: baixar_automaticamente
+  fontes_manuais: documentar_em_external
+  dados_grandes_no_git: proibidos
+  resultados_gerados_no_git: proibidos
+  fixtures_pequenas_de_teste_no_git: permitidas
