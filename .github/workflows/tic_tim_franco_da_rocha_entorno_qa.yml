@@ -1,0 +1,96 @@
+name: TIC-TIM Franco da Rocha Entorno QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-franco-da-rocha-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_franco_da_rocha_entorno_qa.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  entorno-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependencias
+        run: python -m pip install --disable-pip-version-check pandas numpy
+      - name: Materializa composição Setor-APOND auditada
+        env:
+          MAPPING_GZ_B64: H4sIAI3rnGoC/32ay64lNQxF50j8SQ9ibztxhohmSiNgzv//BWKAuvqU9rqzq6VKxY4fO67z69d//vrt729/fvnlj2+/f/35J3XsWrN6/feXX/7/f/UnK2DtWazv7HwyeF/Amll+zRzPJL+mwD5tYOc70wcr2EsnsPZsl3/fefg6P1kAE7AGtoEd77MDfjnXs3msGR/spt/LffhsfzLw9d3AHvusH1k88yE+2QC7dp/xzKMXa2Dj9xnwvlx+nxnA0r/vmbcv1sC2f5+Wf07p7Xvm9IsdYONZwRlVAIN9Fvistq0F8aw9H/kXHX7N9rUguoCBP3v8Pvv6NfcCBjm2YS/7+r086+eLwfkdOL9nbX2tCTF/4GyP7zkxy5/7BLAEJmAQE7OBDTCIiQsxccPW67gJDOrnPfA+yLHr4yzXAhbAfG3NJWANbMP7fA/PNbCm7+EJejDDa5SMhOcEzOu6jIbnNjDfHzIGmO+3mRATCTHx7LcvJmDgl2xg4Jc8wAYYxIvALwK/yOvBlIB5rZhqYP6OkII80gC7ntUCFsCghhTUENAh+dQhL3aAeS2cdT3rBSyA+T6dT93zYv7OlQ350JAPDefecO7ba8zcASxhTX+fzg01ckPMb4j5DbZvsB3utwn32wR9lgfO/ZSPpdPAICYOxMQBvxzwy0A+DPTNgb45UAcH6uBALRioBQN6YqAWXLD9Qi146sEXEzCICZglJMwS8kJMXOib1/dNLV8LtLxm12pg/h6uNfCc1/OKBQxsiITnBM8VsLZ1XuFrncLPpRRge4LtCTYk2ABzFKW/hyv9fUUwYxHoLIHOkiAG5fNI2sAOrAnxWX4eovL6WqCXVAXPwRnBTEd1gPneofK9Qw0xCFpK7fWgGuzrDQzyqAeY7w/aELsbzn1DXMMMXhtqCOglgSYSaCIdrwd1vNbXEaxZwBret4EdYAP79HN2Ddg3kJsDsTsQu6BtBNpGoG00YN+F+IR5lq6AQeyCfhHoF12v9QUzMl0f17UWMK/1ayUwr+tq+Z5aq4Ft2KfXdbV8Ly74DlTwHahAL1UkMN+LKxrYwJpgQ4INCTYk2ACaqBJsyA3M53Slz9sCvVSgiUrwPtAvJdgLzIIKtE0V5Er5Ol91gEG8FMRL+5lxdQDz/aEa7IN5T3UD27DmAea1TYF+KdAvtcH2LWAFrIFtYBDXe4BBXB/wywG/HD8HK9BEdaBGwm8k6kBMHIiJA/kwfiZeE8Ag30fAIB9gFlQDdWKgTgzUifH31LrgF5j3FMx76jYwONsLZ3sh3+F3Jb0WsACWwASsgPlz77XhuQPM+6WXv+N1LGABzOuJDp8PHQXMfztrmCF1gF/gNzwNOqsT4gW+KXZ6Dd35Y678Cwp6awJQKAAA
+        run: |
+          mkdir -p data/tic_tim /tmp/franco_entorno/raw /tmp/franco_entorno/csv /tmp/franco_entorno/out
+          python - <<'PY'
+          import os,base64,gzip
+          raw=gzip.decompress(base64.b64decode(os.environ['MAPPING_GZ_B64']))
+          open('data/tic_tim/franco_da_rocha_setor_apond_368.csv','wb').write(raw)
+          PY
+          python - <<'PY'
+          import pandas as pd
+          p='data/tic_tim/franco_da_rocha_setor_apond_368.csv'
+          d=pd.read_csv(p,dtype=str)
+          assert len(d)==368 and d.CD_SETOR.nunique()==368
+          expected={'3516408001':45,'3516408002':47,'3516408003':44,'3516408004':72,'3516408005':52,'3516408006':64,'3516408007':44}
+          assert d.groupby('APOND').size().to_dict()==expected
+          print('PASS mapping', expected)
+          PY
+      - name: Baixa agregados oficiais de Entorno
+        run: |
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/franco_entorno/raw/domicilios.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/franco_entorno/raw/moradores.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_faces_BR.zip" -o /tmp/franco_entorno/raw/faces.zip
+          for z in /tmp/franco_entorno/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/franco_entorno/csv; done
+      - name: Identifica séries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          root=Path('/tmp/franco_entorno/csv'); achados={}
+          for p in root.glob('*.csv'):
+              h=pd.read_csv(p,sep=';',nrows=0,encoding='utf-8-sig'); cols=[str(c).upper() for c in h.columns]
+              for pref in ('V050','V052','V054'):
+                  if f'{pref}00' in cols and f'{pref}34' in cols: achados[pref]=str(p)
+          assert set(achados)=={'V050','V052','V054'}, achados
+          Path('/tmp/franco_entorno/paths.env').write_text('\n'.join(f'{k}={v}' for k,v in achados.items())+'\n')
+          PY
+      - name: Agrega contadores
+        run: |
+          . /tmp/franco_entorno/paths.env
+          python scripts/tic_tim/agregar_entorno_apond_csv.py --domicilios "$V050" --moradores "$V052" --faces "$V054" --matriz data/tic_tim/franco_da_rocha_setor_apond_368.csv --saida /tmp/franco_entorno/out/franco_entorno_contadores.csv --qa /tmp/franco_entorno/out/franco_entorno_agregacao_qa.json --n-setores-esperados 368 --n-aponds-esperadas 7
+      - name: Calcula 30 distribuições
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py --contadores /tmp/franco_entorno/out/franco_entorno_contadores.csv --config config/tic_tim_entorno_regras.json --saida /tmp/franco_entorno/out/franco_entorno_30_distribuicoes.csv --qa /tmp/franco_entorno/out/franco_entorno_distribuicoes_qa.json --n-aponds-esperadas 7
+      - name: Valida QA final
+        run: |
+          python - <<'PY'
+          import json
+          a=json.load(open('/tmp/franco_entorno/out/franco_entorno_agregacao_qa.json'))
+          d=json.load(open('/tmp/franco_entorno/out/franco_entorno_distribuicoes_qa.json'))
+          assert a['status']=='PASS' and a['n_setores_matriz']==368 and a['n_aponds']==7 and a['n_variaveis_entorno']==105
+          assert d['status']=='PASS' and d['n_aponds']==7 and d['n_grupos_qa']==240
+          print('PASS AGREGACAO',a)
+          print('PASS DISTRIBUICOES',d)
+          PY
+      - name: Persiste resultados
+        run: |
+          mkdir -p data/tic_tim/franco_da_rocha_entorno
+          cp /tmp/franco_entorno/out/* data/tic_tim/franco_da_rocha_entorno/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/franco_da_rocha_setor_apond_368.csv data/tic_tim/franco_da_rocha_entorno
+          if ! git diff --cached --quiet; then git commit -m 'Persist audited Franco da Rocha Entorno results'; git push; fi
+      - name: Publica artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-franco-da-rocha-entorno-qa
+          path: /tmp/franco_entorno/out/**
+          retention-days: 14
