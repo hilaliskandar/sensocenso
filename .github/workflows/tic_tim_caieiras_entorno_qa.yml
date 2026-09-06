@@ -1,0 +1,99 @@
+name: TIC-TIM Caieiras Entorno QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-caieiras-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_caieiras_entorno_qa.yml'
+      - 'scripts/tic_tim/**'
+      - 'config/tic_tim_entorno_regras.json'
+      - 'data/tic_tim/caieiras_setor_apond_207.csv'
+
+permissions:
+  contents: read
+
+jobs:
+  entorno-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instala dependencias minimas
+        run: python -m pip install --disable-pip-version-check pandas numpy dbfread
+
+      - name: Valida insumo territorial
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          p = 'data/tic_tim/caieiras_setor_apond_207.csv'
+          d = pd.read_csv(p, dtype=str)
+          assert list(d.columns) == ['CD_SETOR', 'APOND']
+          assert len(d) == 207, len(d)
+          assert d['CD_SETOR'].nunique() == 207
+          assert set(d['APOND']) == {f'350900700{i}' for i in range(1, 8)}
+          counts = d.groupby('APOND').size().to_dict()
+          expected = {
+              '3509007001': 47,
+              '3509007002': 25,
+              '3509007003': 31,
+              '3509007004': 28,
+              '3509007005': 38,
+              '3509007006': 27,
+              '3509007007': 11,
+          }
+          assert counts == expected, (counts, expected)
+          print('PASS mapping 207 setores / 7 APONDs', counts)
+          PY
+
+      - name: Baixa malha com atributos oficial do IBGE
+        run: |
+          mkdir -p /tmp/caieiras_entorno/raw /tmp/caieiras_entorno/out
+          curl --fail --location --retry 3 --retry-delay 5 \
+            'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/malha_com_atributos/setores/shp/UF/SP/SP_setores_CD2022.zip' \
+            --output /tmp/caieiras_entorno/raw/SP_setores_CD2022.zip
+          unzip -j /tmp/caieiras_entorno/raw/SP_setores_CD2022.zip '*.dbf' -d /tmp/caieiras_entorno/raw
+          test -s /tmp/caieiras_entorno/raw/SP_setores_CD2022.dbf
+          ls -lh /tmp/caieiras_entorno/raw/SP_setores_CD2022.dbf
+
+      - name: Agrega contadores setoriais por APOND
+        run: |
+          python scripts/tic_tim/agregar_entorno_apond.py \
+            --dbf /tmp/caieiras_entorno/raw/SP_setores_CD2022.dbf \
+            --matriz data/tic_tim/caieiras_setor_apond_207.csv \
+            --saida /tmp/caieiras_entorno/out/caieiras_entorno_contadores.csv \
+            --qa /tmp/caieiras_entorno/out/caieiras_entorno_agregacao_qa.json \
+            --cd-mun 3509007 \
+            --n-setores-esperados 207
+
+      - name: Calcula e audita as 30 distribuicoes
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py \
+            --contadores /tmp/caieiras_entorno/out/caieiras_entorno_contadores.csv \
+            --config config/tic_tim_entorno_regras.json \
+            --saida /tmp/caieiras_entorno/out/caieiras_entorno_30_distribuicoes.csv \
+            --qa /tmp/caieiras_entorno/out/caieiras_entorno_distribuicoes_qa.json \
+            --n-aponds-esperadas 7
+
+      - name: Resume QA
+        if: always()
+        run: |
+          echo '=== agregacao ==='
+          cat /tmp/caieiras_entorno/out/caieiras_entorno_agregacao_qa.json || true
+          echo '=== distribuicoes ==='
+          cat /tmp/caieiras_entorno/out/caieiras_entorno_distribuicoes_qa.json || true
+
+      - name: Publica artefatos de QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-caieiras-entorno-qa
+          path: /tmp/caieiras_entorno/out/**
+          if-no-files-found: warn
+          retention-days: 14
