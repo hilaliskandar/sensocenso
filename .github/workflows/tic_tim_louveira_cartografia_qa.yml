@@ -1,0 +1,130 @@
+name: TIC-TIM Louveira Cartografia QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-louveira-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_louveira_cartografia_qa.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cartografia-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependencias geoespaciais
+        run: python -m pip install --disable-pip-version-check geopandas pyogrio shapely matplotlib pandas
+      - name: Baixa fontes oficiais IBGE
+        run: |
+          mkdir -p /tmp/louveira_cart/setores /tmp/louveira_cart/faces /tmp/louveira_cart/out
+          curl --fail --location --retry 3 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/malha_com_atributos/setores/shp/UF/SP/SP_setores_CD2022.zip' -o /tmp/louveira_cart/setores.zip
+          curl --fail --location --retry 3 'https://geoftp.ibge.gov.br/recortes_para_fins_estatisticos/malha_de_setores_censitarios/censo_2022/base_de_faces_de_logradouros_versao_2022_censo_demografico/shp/SP_faces_de_logradouros_2022_shp.zip' -o /tmp/louveira_cart/faces.zip
+          unzip -q /tmp/louveira_cart/setores.zip -d /tmp/louveira_cart/setores
+          python - <<'PY2'
+          import zipfile
+          z=zipfile.ZipFile('/tmp/louveira_cart/faces.zip')
+          names=z.namelist()
+          target=[n for n in names if '3527306' in n]
+          assert target, [n for n in names[:20]]
+          for n in target: z.extract(n,'/tmp/louveira_cart/faces')
+          print('faces extraídas',target)
+          PY2
+      - name: Constrói base territorial e mapa
+        run: |
+          python - <<'PY2'
+          import json, re
+          from pathlib import Path
+          import pandas as pd
+          import geopandas as gpd
+          import matplotlib.pyplot as plt
+
+          mapping=pd.read_csv('data/tic_tim/louveira_setor_apond_92.csv',dtype=str)
+          mapping['CD_SETOR']=mapping['CD_SETOR'].str.extract(r'(\d{15})',expand=False)
+          assert len(mapping)==92 and mapping.CD_SETOR.nunique()==92
+          expected={'3527306001':30,'3527306002':27,'3527306003':35}
+          assert mapping.groupby('APOND').size().to_dict()==expected
+
+          shp=list(Path('/tmp/louveira_cart/setores').rglob('*.shp'))
+          assert shp, 'shp setorial ausente'
+          setores=gpd.read_file(shp[0])
+          setores['CD_SETOR']=setores['CD_SETOR'].astype(str).str.extract(r'(\d{15})',expand=False)
+          setores=setores[setores.CD_SETOR.isin(set(mapping.CD_SETOR))].copy()
+          assert len(setores)==92 and setores.CD_SETOR.nunique()==92, (len(setores),setores.CD_SETOR.nunique())
+          assert set(setores.CD_SETOR)==set(mapping.CD_SETOR)
+          setores=setores.merge(mapping,on='CD_SETOR',how='left',validate='one_to_one')
+          if setores.crs is None: setores=setores.set_crs(4674)
+          else: setores=setores.to_crs(4674)
+
+          aponds=setores[['APOND','geometry']].dissolve(by='APOND',as_index=False)
+          aponds['ROTULO']=aponds['APOND'].map({'3527306001':'A01','3527306002':'A02','3527306003':'A03'})
+          assert len(aponds)==3
+
+          fshp=list(Path('/tmp/louveira_cart/faces').rglob('*.shp'))
+          assert fshp, 'shp de faces municipal ausente'
+          faces=gpd.read_file(fshp[0])
+          faces['CD_SETOR_ORIG']=faces['CD_SETOR'].astype(str)
+          faces['CD_SETOR']=faces['CD_SETOR_ORIG'].str.extract(r'(\d{15})',expand=False)
+          faces=faces[faces.CD_SETOR.isin(set(mapping.CD_SETOR))].copy()
+          if faces.crs is None: faces=faces.set_crs(4674)
+          else: faces=faces.to_crs(4674)
+          faces=faces.merge(mapping,on='CD_SETOR',how='left',validate='many_to_one')
+          assert len(faces)>0 and faces.APOND.notna().all()
+
+          out=Path('/tmp/louveira_cart/out')
+          gpkg=out/'TIC_TIM_Censo2022_Louveira_APOND_base_territorial_v1.gpkg'
+          setores.to_file(gpkg,layer='setores',driver='GPKG')
+          aponds.to_file(gpkg,layer='aponds',driver='GPKG')
+          faces.to_file(gpkg,layer='faces',driver='GPKG')
+
+          fig,ax=plt.subplots(figsize=(10,8))
+          aponds.plot(ax=ax,alpha=0.20,edgecolor='black',linewidth=1.2)
+          faces.plot(ax=ax,linewidth=0.25,alpha=0.55)
+          aponds.boundary.plot(ax=ax,linewidth=1.4)
+          pts=aponds.representative_point()
+          for (_,r),p in zip(aponds.iterrows(),pts): ax.text(p.x,p.y,r['ROTULO'],ha='center',va='center',fontsize=12,fontweight='bold')
+          ax.set_title('Louveira — Áreas de Ponderação do Censo 2022')
+          ax.set_axis_off(); fig.tight_layout()
+          fig.savefig(out/'TIC_TIM_Censo2022_Louveira_APOND_mapa_abertura_v1.png',dpi=180,bbox_inches='tight')
+          plt.close(fig)
+
+          sit_col=next((c for c in ['CD_SIT','SITUACAO','CD_SITUACAO'] if c in setores.columns),None)
+          situacao={}
+          if sit_col:
+              situacao={str(k):int(v) for k,v in setores[sit_col].fillna('NA').astype(str).value_counts(dropna=False).to_dict().items()}
+          qa={
+            'status':'PASS',
+            'municipio':'Louveira','cd_mun':'3527306','crs':'EPSG:4674',
+            'n_setores':int(len(setores)),'n_setores_unicos':int(setores.CD_SETOR.nunique()),
+            'n_aponds':int(len(aponds)),'setores_por_apond':{str(k):int(v) for k,v in setores.groupby('APOND').size().to_dict().items()},
+            'n_faces':int(len(faces)),'situacao_setorial':situacao,
+            'setores_faltantes':sorted(set(mapping.CD_SETOR)-set(setores.CD_SETOR)),
+            'setores_extras':sorted(set(setores.CD_SETOR)-set(mapping.CD_SETOR)),
+            'fonte_setores':'IBGE Censo 2022 — SP_setores_CD2022.zip',
+            'fonte_faces':'IBGE Base de Faces de Logradouros 2022 — SP_faces_de_logradouros_2022_shp.zip'
+          }
+          (out/'TIC_TIM_Censo2022_Louveira_QA_CARTOGRAFIA_v1.json').write_text(json.dumps(qa,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(qa,ensure_ascii=False,indent=2))
+          PY2
+      - name: Persiste QA resumido na branch
+        run: |
+          mkdir -p data/tic_tim/louveira_cartografia
+          cp /tmp/louveira_cart/out/TIC_TIM_Censo2022_Louveira_QA_CARTOGRAFIA_v1.json data/tic_tim/louveira_cartografia/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/louveira_cartografia
+          if ! git diff --cached --quiet; then git commit -m 'Persist audited Louveira cartography QA'; git push; fi
+      - name: Publica artefatos cartográficos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-louveira-cartografia-qa
+          path: /tmp/louveira_cart/out/**
+          retention-days: 14
