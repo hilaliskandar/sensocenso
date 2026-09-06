@@ -62,6 +62,19 @@ jobs:
           test -s /tmp/caieiras_entorno/raw/SP_setores_CD2022.dbf
           ls -lh /tmp/caieiras_entorno/raw/SP_setores_CD2022.dbf
 
+      - name: Inspeciona esquema DBF oficial
+        run: |
+          python - <<'PY'
+          from dbfread import DBF
+          p = '/tmp/caieiras_entorno/raw/SP_setores_CD2022.dbf'
+          t = DBF(p, load=False, char_decode_errors='ignore')
+          fields = list(t.field_names)
+          print('N_FIELDS=', len(fields))
+          print('FIELDS=', ','.join(fields))
+          print('V_FIELDS=', ','.join(f for f in fields if f.upper().startswith('V')))
+          print('SETOR_FIELDS=', ','.join(f for f in fields if 'SETOR' in f.upper()))
+          PY
+
       - name: Agrega contadores setoriais por APOND
         run: |
           python scripts/tic_tim/agregar_entorno_apond.py \
