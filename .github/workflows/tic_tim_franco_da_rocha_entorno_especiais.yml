@@ -1,0 +1,54 @@
+name: TIC-TIM Franco Entorno Valores Especiais
+
+on:
+  push:
+    branches: [tic-tim-franco-da-rocha-apond-pipeline]
+    paths: ['.github/workflows/tic_tim_franco_da_rocha_entorno_especiais.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install pandas
+      - name: Baixa e diagnostica V050/V052
+        run: |
+          mkdir -p /tmp/franco_diag/raw /tmp/franco_diag/csv
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl -fL --retry 3 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/franco_diag/raw/d.zip
+          curl -fL --retry 3 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/franco_diag/raw/m.zip
+          for z in /tmp/franco_diag/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/franco_diag/csv; done
+          python - <<'PY'
+          import pandas as pd, json
+          from pathlib import Path
+          alvo_prefix='3516408'
+          out={}
+          for p in Path('/tmp/franco_diag/csv').glob('*.csv'):
+              h=pd.read_csv(p,sep=';',nrows=0,encoding='utf-8-sig')
+              cols=[str(c).upper() for c in h.columns]
+              pref='V050' if 'V05000' in cols else ('V052' if 'V05200' in cols else None)
+              if not pref: continue
+              setor=next(c for c in h.columns if str(c).strip().upper() in ('SETOR','CD_SETOR','COD_SETOR_M22FINAL'))
+              vars_=[c for c in h.columns if str(c).upper().startswith(pref)]
+              bad=[]
+              for chunk in pd.read_csv(p,sep=';',dtype=str,usecols=[setor]+vars_,encoding='utf-8-sig',chunksize=50000,low_memory=False):
+                  chunk[setor]=chunk[setor].astype(str).str.replace(r'\.0$','',regex=True).str.strip()
+                  chunk=chunk[chunk[setor].str.startswith(alvo_prefix)]
+                  for _,r in chunk.iterrows():
+                      vals={v:str(r[v]).strip() for v in vars_}
+                      invalid={v:x for v,x in vals.items() if x not in ('','nan','None') and pd.to_numeric(x.replace(',','.'),errors='coerce') is None}
+                      if invalid: bad.append({'CD_SETOR':r[setor],'valores_especiais':invalid})
+              out[pref]={'arquivo':p.name,'n_linhas_com_especial':len(bad),'linhas':bad}
+          Path('data/tic_tim/franco_da_rocha_entorno').mkdir(parents=True,exist_ok=True)
+          Path('data/tic_tim/franco_da_rocha_entorno/franco_entorno_valores_especiais.json').write_text(json.dumps(out,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(out,ensure_ascii=False,indent=2))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/franco_da_rocha_entorno/franco_entorno_valores_especiais.json
+          git commit -m 'Document special Entorno values in Franco da Rocha' && git push
