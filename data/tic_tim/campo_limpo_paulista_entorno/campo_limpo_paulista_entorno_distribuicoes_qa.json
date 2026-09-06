@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "territorios": [
+    "3509601001",
+    "3509601002",
+    "3509601003",
+    "3509601004",
+    "3509601005",
+    "3509601006",
+    "MUNICIPIO"
+  ],
+  "aponds": [
+    "3509601001",
+    "3509601002",
+    "3509601003",
+    "3509601004",
+    "3509601005",
+    "3509601006"
+  ],
+  "n_aponds": 6,
+  "linha_municipal": true,
+  "n_distribuicoes_por_territorio": 30,
+  "n_grupos_qa": 210,
+  "max_desvio_soma_percentual_bruto": 1.4210854715202004e-14,
+  "max_desvio_soma_percentual_dominio": 1.4210854715202004e-14,
+  "erros": []
+}
