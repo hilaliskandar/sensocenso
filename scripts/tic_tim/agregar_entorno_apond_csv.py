@@ -6,9 +6,10 @@ Fontes esperadas:
 - Agregados_por_setores_entorno_moradores_BR.csv (V05200-V05234)
 - Agregados_por_setores_entorno_faces_BR.csv (V05400-V05434)
 
-A rotina filtra os setores-alvo antes da agregação, preserva ausências como NA
-e soma contadores por APOND. Também produz a linha MUNICIPIO pela soma dos
-contadores das APONDs; percentuais são calculados somente na etapa seguinte.
+A rotina filtra os setores-alvo antes da agregação. Setores sem registro publicado
+no arquivo de Entorno permanecem ausentes, nunca são convertidos em zero. Os
+contadores publicados são somados por APOND e a linha MUNICIPIO é produzida
+pela soma das APONDs. Percentuais são calculados somente na etapa seguinte.
 """
 from __future__ import annotations
 
@@ -66,7 +67,6 @@ def agregar_arquivo(
     cab = pd.read_csv(path, sep=";", nrows=0, encoding="utf-8-sig")
     col_setor = detectar_coluna_setor(list(cab.columns))
     vars_ = [c for c in cab.columns if str(c).strip().upper().startswith(prefixo)]
-    vars_ = sorted(vars_, key=lambda x: str(x).upper())
     esperadas = [f"{prefixo}{i:02d}" for i in range(35)]
     mapa_vars = {str(c).strip().upper(): c for c in vars_}
     faltantes = [v for v in esperadas if v not in mapa_vars]
@@ -77,7 +77,6 @@ def agregar_arquivo(
     alvo = set(matriz["CD_SETOR"])
     partes = []
     n_linhas_lidas = 0
-    n_linhas_alvo = 0
     valores_nao_numericos: dict[str, int] = {}
 
     for chunk in pd.read_csv(
@@ -94,7 +93,6 @@ def agregar_arquivo(
         chunk = chunk[chunk[col_setor].isin(alvo)].copy()
         if chunk.empty:
             continue
-        n_linhas_alvo += len(chunk)
         chunk = chunk.rename(columns={col_setor: "CD_SETOR"})
         rename_vars = {mapa_vars[v]: v for v in esperadas}
         chunk = chunk.rename(columns=rename_vars)
@@ -109,27 +107,39 @@ def agregar_arquivo(
         partes.append(chunk[["CD_SETOR"] + esperadas])
 
     if not partes:
-        raise SystemExit(f"FAIL: nenhum setor-alvo localizado em {path.name}")
-    dados = pd.concat(partes, ignore_index=True)
-    if dados["CD_SETOR"].duplicated().any():
-        dups = dados.loc[dados["CD_SETOR"].duplicated(), "CD_SETOR"].unique().tolist()
+        raise SystemExit(f"FAIL: nenhum setor-alvo com registro publicado em {path.name}")
+    dados_pub = pd.concat(partes, ignore_index=True)
+    if dados_pub["CD_SETOR"].duplicated().any():
+        dups = dados_pub.loc[dados_pub["CD_SETOR"].duplicated(), "CD_SETOR"].unique().tolist()
         raise SystemExit(f"FAIL: setor duplicado em {path.name}: {dups[:10]}")
 
-    encontrados = set(dados["CD_SETOR"])
+    encontrados = set(dados_pub["CD_SETOR"])
     ausentes = sorted(alvo - encontrados)
-    if ausentes:
-        raise SystemExit(
-            f"FAIL: {len(ausentes)} setores da matriz ausentes em {path.name}: {ausentes[:10]}"
-        )
-
-    dados = matriz.merge(dados, on="CD_SETOR", how="left", validate="one_to_one")
+    dados = matriz.merge(dados_pub, on="CD_SETOR", how="left", validate="one_to_one")
     agg = dados.groupby("APOND", sort=True)[esperadas].sum(min_count=1).reset_index()
+
+    publicados_apond = (
+        matriz[matriz["CD_SETOR"].isin(encontrados)]
+        .groupby("APOND")
+        .size()
+        .reindex(sorted(matriz["APOND"].unique()), fill_value=0)
+        .astype(int)
+        .to_dict()
+    )
+    totais_apond = (
+        matriz.groupby("APOND").size().reindex(sorted(matriz["APOND"].unique())).astype(int).to_dict()
+    )
+
     qa = {
         "arquivo": path.name,
         "prefixo": prefixo,
         "n_linhas_lidas": n_linhas_lidas,
-        "n_setores_alvo": n_linhas_alvo,
-        "n_setores_unicos": int(dados["CD_SETOR"].nunique()),
+        "n_setores_matriz": int(len(matriz)),
+        "n_setores_com_registro_publicado": int(len(encontrados)),
+        "n_setores_sem_registro_publicado": int(len(ausentes)),
+        "setores_sem_registro_publicado": ausentes,
+        "setores_com_registro_por_apond": publicados_apond,
+        "setores_totais_por_apond": totais_apond,
         "n_aponds": int(agg["APOND"].nunique()),
         "campos": esperadas,
         "valores_nao_numericos": valores_nao_numericos,
@@ -193,9 +203,15 @@ def main() -> None:
     resultado.to_csv(args.saida, index=False, encoding="utf-8-sig")
     args.qa.write_text(json.dumps(qa, ensure_ascii=False, indent=2), encoding="utf-8")
     print(
-        f"PASS setores={qa['n_setores_matriz']} aponds={qa['n_aponds']} "
+        f"PASS setores_matriz={qa['n_setores_matriz']} aponds={qa['n_aponds']} "
         f"variaveis={qa['n_variaveis_entorno']}"
     )
+    for universo, fqa in qa_fontes.items():
+        print(
+            universo,
+            f"publicados={fqa['n_setores_com_registro_publicado']}",
+            f"sem_registro={fqa['n_setores_sem_registro_publicado']}",
+        )
     print(args.saida)
     print(args.qa)
 
