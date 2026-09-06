@@ -12,7 +12,7 @@ on:
       - 'data/tic_tim/caieiras_setor_apond_207.csv'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   entorno-qa:
@@ -114,6 +114,23 @@ jobs:
           assert dq['n_grupos_qa'] == 240
           print('PASS QA final', dq)
           PY
+
+      - name: Persiste resultados auditados na branch
+        run: |
+          mkdir -p data/tic_tim/caieiras_entorno
+          cp /tmp/caieiras_entorno/out/caieiras_entorno_contadores.csv data/tic_tim/caieiras_entorno/
+          cp /tmp/caieiras_entorno/out/caieiras_entorno_30_distribuicoes.csv data/tic_tim/caieiras_entorno/
+          cp /tmp/caieiras_entorno/out/caieiras_entorno_agregacao_qa.json data/tic_tim/caieiras_entorno/
+          cp /tmp/caieiras_entorno/out/caieiras_entorno_distribuicoes_qa.json data/tic_tim/caieiras_entorno/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/caieiras_entorno
+          if git diff --cached --quiet; then
+            echo 'Resultados já persistidos sem alteração.'
+          else
+            git commit -m 'Persist audited Caieiras Entorno results'
+            git push
+          fi
 
       - name: Resume QA
         if: always()
