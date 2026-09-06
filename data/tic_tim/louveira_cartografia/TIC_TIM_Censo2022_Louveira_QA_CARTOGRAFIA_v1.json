@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "municipio": "Louveira",
+  "cd_mun": "3527306",
+  "crs": "EPSG:4674",
+  "n_setores": 92,
+  "n_setores_unicos": 92,
+  "n_aponds": 3,
+  "setores_por_apond": {
+    "3527306001": 30,
+    "3527306002": 27,
+    "3527306003": 35
+  },
+  "n_faces": 2234,
+  "situacao_setorial": {
+    "1": 50,
+    "2": 17,
+    "3": 14,
+    "8": 11
+  },
+  "setores_faltantes": [],
+  "setores_extras": [],
+  "fonte_setores": "IBGE Censo 2022 — SP_setores_CD2022.zip",
+  "fonte_faces": "IBGE Base de Faces de Logradouros 2022 — SP_faces_de_logradouros_2022_shp.zip"
+}
