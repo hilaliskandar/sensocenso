@@ -1,0 +1,96 @@
+name: TIC-TIM Francisco Morato Entorno QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-francisco-morato-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_francisco_morato_entorno_qa.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  entorno-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependencias
+        run: python -m pip install --disable-pip-version-check pandas numpy
+      - name: Materializa composição Setor-APOND auditada
+        env:
+          MAPPING_GZ_B64: H4sIAF78nGoC/33ZOY5dNxCF4dxrUUDWwCE0LKVuQ3Lu/e9CUCDo+gKfOmv8uByKp4qH9f76/N+3L/9+fP305z8ff3/+I3uuHHf0+PF3Pv38f8wXukQzfqF4oTJaRpsoJpcRZdRGmygnl5FefD+WsV9oGW2iFUT7MVe/0GOufKFtdIhOGJWRl3EfX9ULtdESmuMx4HmhTfRUb7/QY8D1Qm20jK6iMeNwhXGJcnOu9Fc1jKiN2ZNzdSsdZi+jI2HPdqDWoADW9FfBxa/0gBbAan9lsS2f8vJ5bZ/XnkbMr7ktUReHeTzX4RUwTxqxfM1j2ZxtxPtrnsuvrhV1JyV6XTee5esVw2f5en+1jY4H5L5ipBErdgwKO8Yy4gpjeq7ZRrwrY26j3yyDJSViGE2jMEojRyMcjVhG28jRCEcjh5IochrRpUSmURm1EYtD5DZi7Q3flVGORjkaFUZpVEZtxLoRdRiNct3oYTSNvOX2lpueLZ6m4o1YRaOP5+ITJpZP+WkqXnOtMEqjMmojb3m5Hq5jdFnM9zCaRrRYsdPI9XC7Hm5XgO0K8HzdvBfvaBxH4zgax9o41sbxrXd8yk/b8xrw+mq7vtpuMvWuE/Y6YZ+25414E+UYRtMojGj1c5QRszLHMuJ55ThGl2gOo2kURmlURm1El5JzG1G9+fRsLxSs2OkeUQbfKRmORlDzGW20jLbRMbqqovn0bG9kzac1n+0Bl9E2OkbeV3lfxXs5K4xY2bJ8ymXN1zLaDG8dI7qUbGu++TbPpzF7I0fDxiybL8TsZeRouNuTy1fA4uWbT2P2Rk6H5XRwtyeXt7ycDsvpsJwO2wLYLnrbRW+nURm5OLizlDZmuY8R3yl5htE0cjTcqsrjaBza1HT3O48vxHOMnCl2enmdKdeZcn0hXtuDy1Zw3mVkbVxfiJfP9hrDaBpRG+VmWo0yaiNeHGXrWON4QGZKTT5hak4jWseydazJ8lXBhK2YRrzNK9KIxbyijZiw5T5buc9W4UNJRyMt0eTrpjKNygO20TJi06nyGNHP19PpvRFfN1WWaFmiVUaORlkb/tWs6nhAl692+bKdK9u5ajadyn226m1EA1PtCrCG0TQKI1cA99nKfbZyn62Whb0s7M17ufY0cppvn/J2mm/fRG6m1Xaab0fDDa5yg6vc4Co3uOq6VF7H8LIhWbeMHMPLB127i9W2Ij3CqIwo7B505m2/0W5V9WTF7snI9yx/5cXP3yyDVbSD1aZtKtqmosOLj/ZcjnxsD3iM+ArotNjSikpv2fagc/kr78seoO0Bupwp5X2V91X0h11ttDzXNjpGVm87Gj2NLOx2NGwPup2V/hmu2wJoC7sdDf9C14v+sNf/tPEdgZiVC/soAAA=
+        run: |
+          mkdir -p data/tic_tim /tmp/morato_entorno/raw /tmp/morato_entorno/csv /tmp/morato_entorno/out
+          python - <<'PY2'
+          import os,base64,gzip
+          raw=gzip.decompress(base64.b64decode(os.environ['MAPPING_GZ_B64']))
+          open('data/tic_tim/francisco_morato_setor_apond_388.csv','wb').write(raw)
+          PY2
+          python - <<'PY2'
+          import pandas as pd
+          p='data/tic_tim/francisco_morato_setor_apond_388.csv'
+          d=pd.read_csv(p,dtype=str)
+          assert len(d)==388 and d.CD_SETOR.nunique()==388
+          expected={'3516309001':27,'3516309002':51,'3516309003':62,'3516309004':41,'3516309005':64,'3516309006':35,'3516309007':44,'3516309008':64}
+          assert d.groupby('APOND').size().to_dict()==expected
+          print('PASS mapping', expected)
+          PY2
+      - name: Baixa agregados oficiais de Entorno
+        run: |
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/morato_entorno/raw/domicilios.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/morato_entorno/raw/moradores.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_faces_BR.zip" -o /tmp/morato_entorno/raw/faces.zip
+          for z in /tmp/morato_entorno/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/morato_entorno/csv; done
+      - name: Identifica séries
+        run: |
+          python - <<'PY2'
+          from pathlib import Path
+          import pandas as pd
+          root=Path('/tmp/morato_entorno/csv'); achados={}
+          for p in root.glob('*.csv'):
+              h=pd.read_csv(p,sep=';',nrows=0,encoding='utf-8-sig'); cols=[str(c).upper() for c in h.columns]
+              for pref in ('V050','V052','V054'):
+                  if f'{pref}00' in cols and f'{pref}34' in cols: achados[pref]=str(p)
+          assert set(achados)=={'V050','V052','V054'}, achados
+          Path('/tmp/morato_entorno/paths.env').write_text('\n'.join(f'{k}={v}' for k,v in achados.items())+'\n')
+          PY2
+      - name: Agrega contadores
+        run: |
+          . /tmp/morato_entorno/paths.env
+          python scripts/tic_tim/agregar_entorno_apond_csv.py --domicilios "$V050" --moradores "$V052" --faces "$V054" --matriz data/tic_tim/francisco_morato_setor_apond_388.csv --saida /tmp/morato_entorno/out/francisco_morato_entorno_contadores.csv --qa /tmp/morato_entorno/out/francisco_morato_entorno_agregacao_qa.json --n-setores-esperados 388 --n-aponds-esperadas 8
+      - name: Calcula 30 distribuições
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py --contadores /tmp/morato_entorno/out/francisco_morato_entorno_contadores.csv --config config/tic_tim_entorno_regras.json --saida /tmp/morato_entorno/out/francisco_morato_entorno_30_distribuicoes.csv --qa /tmp/morato_entorno/out/francisco_morato_entorno_distribuicoes_qa.json --n-aponds-esperadas 8
+      - name: Valida QA final
+        run: |
+          python - <<'PY2'
+          import json
+          a=json.load(open('/tmp/morato_entorno/out/francisco_morato_entorno_agregacao_qa.json'))
+          d=json.load(open('/tmp/morato_entorno/out/francisco_morato_entorno_distribuicoes_qa.json'))
+          assert a['status']=='PASS' and a['n_setores_matriz']==388 and a['n_aponds']==8 and a['n_variaveis_entorno']==105
+          assert d['status']=='PASS' and d['n_aponds']==8 and d['n_grupos_qa']==270
+          print('PASS AGREGACAO',a)
+          print('PASS DISTRIBUICOES',d)
+          PY2
+      - name: Persiste resultados
+        run: |
+          mkdir -p data/tic_tim/francisco_morato_entorno
+          cp /tmp/morato_entorno/out/* data/tic_tim/francisco_morato_entorno/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/francisco_morato_setor_apond_388.csv data/tic_tim/francisco_morato_entorno
+          if ! git diff --cached --quiet; then git commit -m 'Persist audited Francisco Morato Entorno results'; git push; fi
+      - name: Publica artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-francisco-morato-entorno-qa
+          path: /tmp/morato_entorno/out/**
+          retention-days: 14
