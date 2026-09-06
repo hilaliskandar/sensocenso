@@ -1,0 +1,96 @@
+name: TIC-TIM Campo Limpo Paulista Entorno QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-campo-limpo-paulista-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_campo_limpo_paulista_entorno_qa.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  entorno-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependencias
+        run: python -m pip install --disable-pip-version-check pandas numpy
+      - name: Materializa composição Setor-APOND auditada
+        env:
+          MAPPING_GZ_B64: H4sIAHUHnWoC/33XS24UMRQF0DlrycB+z98hIkwJAubsfxdESEiOxanMOkdlX1+7qqu/vP7++fXX24+Xz9/fvr1+yl72KLX08v4X8+Xf51I/0krTEtW6SVFM1RSk4auGEw4nnB5wdtMgLdZb9wM5/Gb4KGHigFEZI3KYHq5ywsYDEL2bHKM7hvcrlhNud7jT1ERZhokxshaT78pyxIiPdG7KRT1Ng3TeXxfNInr/B+l8EF2UnKs2X9V8lZdcezN5rv4wF5uvwzGGY4xOemh+VRN3OWo1hYkJo6VpmpaJ9UYvJq+re13eyvDtEMNXLbex3Mb2urbXtR8GZPgsaeqmafJcPmzl/GrL60HUTcM0RfVc8k0PVy3SeUQvOo/oTdXENupsJifcnmtzrqhpaqZlYlERxVRNDh8OHw4f3TRM0+Q2wm2k20i3kW4j3Ua6jXQbm21k9b183kTtok06X5ZuaqZOOk/URWeHF53f5u16ODB8dfhaqylMjuE2qtuodZgmKRwjPNfwuqYHnI6xPOBaJu/XdoztereXvFlvFM4V3pQYzcQY4YSlHeewXzRNi3T+NLvorPcmXlXPJ/ZNw8SENaspTGlywvS60uFzmjbp/AF+k5fcvK7m8MMJN2NEeaBqaqZuYr3RwuQBmwfsaXL44QFdb0x3OB+u4rGJ5eaX29gcML3L6V3OEqb/drj+vjkczY+LummaNun8yr7Jc50P85sc43yRvuh8W77JCc+35ZuayesKryscPh0+HSMdIx0jXW9zjOYOmztsPofN62oPCd1h8xHtDt+dsLve7nq7w3eH7w4/PmzKH32PEGDYGAAA
+        run: |
+          mkdir -p data/tic_tim /tmp/campo_entorno/raw /tmp/campo_entorno/csv /tmp/campo_entorno/out
+          python - <<'PY2'
+          import os,base64,gzip
+          raw=gzip.decompress(base64.b64decode(os.environ['MAPPING_GZ_B64']))
+          open('data/tic_tim/campo_limpo_paulista_setor_apond_235.csv','wb').write(raw)
+          PY2
+          python - <<'PY2'
+          import pandas as pd
+          p='data/tic_tim/campo_limpo_paulista_setor_apond_235.csv'
+          d=pd.read_csv(p,dtype=str)
+          assert len(d)==235 and d.CD_SETOR.nunique()==235
+          expected={'3509601001':36,'3509601002':46,'3509601003':37,'3509601004':34,'3509601005':45,'3509601006':37}
+          assert d.groupby('APOND').size().to_dict()==expected
+          print('PASS mapping', expected)
+          PY2
+      - name: Baixa agregados oficiais de Entorno
+        run: |
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/campo_entorno/raw/domicilios.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/campo_entorno/raw/moradores.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_faces_BR.zip" -o /tmp/campo_entorno/raw/faces.zip
+          for z in /tmp/campo_entorno/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/campo_entorno/csv; done
+      - name: Identifica séries
+        run: |
+          python - <<'PY2'
+          from pathlib import Path
+          import pandas as pd
+          root=Path('/tmp/campo_entorno/csv'); achados={}
+          for p in root.glob('*.csv'):
+              h=pd.read_csv(p,sep=';',nrows=0,encoding='utf-8-sig'); cols=[str(c).upper() for c in h.columns]
+              for pref in ('V050','V052','V054'):
+                  if f'{pref}00' in cols and f'{pref}34' in cols: achados[pref]=str(p)
+          assert set(achados)=={'V050','V052','V054'}, achados
+          Path('/tmp/campo_entorno/paths.env').write_text('\n'.join(f'{k}={v}' for k,v in achados.items())+'\n')
+          PY2
+      - name: Agrega contadores
+        run: |
+          . /tmp/campo_entorno/paths.env
+          python scripts/tic_tim/agregar_entorno_apond_csv.py --domicilios "$V050" --moradores "$V052" --faces "$V054" --matriz data/tic_tim/campo_limpo_paulista_setor_apond_235.csv --saida /tmp/campo_entorno/out/campo_limpo_paulista_entorno_contadores.csv --qa /tmp/campo_entorno/out/campo_limpo_paulista_entorno_agregacao_qa.json --n-setores-esperados 235 --n-aponds-esperadas 6
+      - name: Calcula 30 distribuições
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py --contadores /tmp/campo_entorno/out/campo_limpo_paulista_entorno_contadores.csv --config config/tic_tim_entorno_regras.json --saida /tmp/campo_entorno/out/campo_limpo_paulista_entorno_30_distribuicoes.csv --qa /tmp/campo_entorno/out/campo_limpo_paulista_entorno_distribuicoes_qa.json --n-aponds-esperadas 6
+      - name: Valida QA final
+        run: |
+          python - <<'PY2'
+          import json
+          a=json.load(open('/tmp/campo_entorno/out/campo_limpo_paulista_entorno_agregacao_qa.json'))
+          d=json.load(open('/tmp/campo_entorno/out/campo_limpo_paulista_entorno_distribuicoes_qa.json'))
+          assert a['status']=='PASS' and a['n_setores_matriz']==235 and a['n_aponds']==6 and a['n_variaveis_entorno']==105
+          assert d['status']=='PASS' and d['n_aponds']==6 and d['n_grupos_qa']==210
+          print('PASS AGREGACAO',a)
+          print('PASS DISTRIBUICOES',d)
+          PY2
+      - name: Persiste resultados
+        run: |
+          mkdir -p data/tic_tim/campo_limpo_paulista_entorno
+          cp /tmp/campo_entorno/out/* data/tic_tim/campo_limpo_paulista_entorno/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/campo_limpo_paulista_setor_apond_235.csv data/tic_tim/campo_limpo_paulista_entorno
+          if ! git diff --cached --quiet; then git commit -m 'Persist audited Campo Limpo Paulista Entorno results'; git push; fi
+      - name: Publica artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-campo-limpo-paulista-entorno-qa
+          path: /tmp/campo_entorno/out/**
+          retention-days: 14
