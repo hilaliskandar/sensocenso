@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: Instala dependencias minimas
-        run: python -m pip install --disable-pip-version-check pandas numpy dbfread
+        run: python -m pip install --disable-pip-version-check pandas numpy
 
       - name: Valida insumo territorial
         run: |
@@ -37,53 +37,97 @@ jobs:
           assert list(d.columns) == ['CD_SETOR', 'APOND']
           assert len(d) == 207, len(d)
           assert d['CD_SETOR'].nunique() == 207
-          assert set(d['APOND']) == {f'350900700{i}' for i in range(1, 8)}
-          counts = d.groupby('APOND').size().to_dict()
           expected = {'3509007001':47,'3509007002':25,'3509007003':31,'3509007004':28,'3509007005':38,'3509007006':27,'3509007007':11}
+          counts = d.groupby('APOND').size().to_dict()
           assert counts == expected, (counts, expected)
           print('PASS mapping 207 setores / 7 APONDs', counts)
           PY
 
-      - name: Inspeciona pacotes oficiais republicados em 17-04-2025
+      - name: Baixa os três agregados oficiais de Entorno
         run: |
-          mkdir -p /tmp/caieiras_entorno/raw /tmp/caieiras_entorno/out
-          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/Agregados_por_Setor_csv'
-          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_caracteristicas_domicilio2_BR_20250417.zip" -o /tmp/caieiras_entorno/raw/domicilio2.zip
-          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_caracteristicas_domicilio3_BR_20250417.zip" -o /tmp/caieiras_entorno/raw/domicilio3.zip
-          python - <<'PY'
-          import csv, io, zipfile
-          for p in ['/tmp/caieiras_entorno/raw/domicilio2.zip','/tmp/caieiras_entorno/raw/domicilio3.zip']:
-              print('ZIP=', p)
-              with zipfile.ZipFile(p) as z:
-                  print('MEMBERS=', z.namelist())
-                  for name in z.namelist():
-                      if name.lower().endswith('.csv'):
-                          with z.open(name) as f:
-                              line = io.TextIOWrapper(f, encoding='utf-8-sig', errors='replace').readline().strip()
-                          print('HEADER', name, '=', line[:5000])
-          PY
+          mkdir -p /tmp/caieiras_entorno/raw /tmp/caieiras_entorno/csv /tmp/caieiras_entorno/out
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl --fail --location --retry 3 --retry-delay 5 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/caieiras_entorno/raw/domicilios.zip
+          curl --fail --location --retry 3 --retry-delay 5 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/caieiras_entorno/raw/moradores.zip
+          curl --fail --location --retry 3 --retry-delay 5 "$BASE/Agregados_por_setores_entorno_faces_BR.zip" -o /tmp/caieiras_entorno/raw/faces.zip
+          for z in /tmp/caieiras_entorno/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/caieiras_entorno/csv; done
+          find /tmp/caieiras_entorno/csv -maxdepth 1 -type f -name '*.csv' -print
 
-      - name: Verifica se pacotes contêm séries do Entorno
+      - name: Identifica e valida as séries V050 V052 V054
         run: |
           python - <<'PY'
-          import io, zipfile
-          wanted = ('V05000','V05200','V05400','V05001','V05201','V05401')
-          found = {}
-          for p in ['/tmp/caieiras_entorno/raw/domicilio2.zip','/tmp/caieiras_entorno/raw/domicilio3.zip']:
-              with zipfile.ZipFile(p) as z:
-                  for name in z.namelist():
-                      if not name.lower().endswith('.csv'):
-                          continue
-                      with z.open(name) as f:
-                          header = io.TextIOWrapper(f, encoding='utf-8-sig', errors='replace').readline()
-                      hits = [v for v in wanted if v.lower() in header.lower()]
-                      if hits:
-                          found[name] = hits
-          print('ENTORNO_HITS=', found)
-          if not found:
-              raise SystemExit('PACOTES_DOMICILIO2_3_NAO_CONTEM_ENTORNO')
+          from pathlib import Path
+          import pandas as pd
+          root = Path('/tmp/caieiras_entorno/csv')
+          esperado = {'V050':'domicilios','V052':'moradores','V054':'faces'}
+          achados = {}
+          for p in root.glob('*.csv'):
+              h = pd.read_csv(p, sep=';', nrows=0, encoding='utf-8-sig')
+              cols = [str(c).upper() for c in h.columns]
+              for pref in esperado:
+                  if f'{pref}00' in cols and f'{pref}34' in cols:
+                      achados[pref] = str(p)
+                      print(pref, p.name, len([c for c in cols if c.startswith(pref)]))
+          assert set(achados) == set(esperado), achados
+          Path('/tmp/caieiras_entorno/paths.env').write_text(
+              '\n'.join(f'{k}={v}' for k,v in achados.items()) + '\n', encoding='utf-8'
+          )
+          PY
+          cat /tmp/caieiras_entorno/paths.env
+
+      - name: Agrega contadores setoriais por APOND
+        run: |
+          . /tmp/caieiras_entorno/paths.env
+          python scripts/tic_tim/agregar_entorno_apond_csv.py \
+            --domicilios "$V050" \
+            --moradores "$V052" \
+            --faces "$V054" \
+            --matriz data/tic_tim/caieiras_setor_apond_207.csv \
+            --saida /tmp/caieiras_entorno/out/caieiras_entorno_contadores.csv \
+            --qa /tmp/caieiras_entorno/out/caieiras_entorno_agregacao_qa.json \
+            --n-setores-esperados 207 \
+            --n-aponds-esperadas 7
+
+      - name: Calcula e audita as 30 distribuições
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py \
+            --contadores /tmp/caieiras_entorno/out/caieiras_entorno_contadores.csv \
+            --config config/tic_tim_entorno_regras.json \
+            --saida /tmp/caieiras_entorno/out/caieiras_entorno_30_distribuicoes.csv \
+            --qa /tmp/caieiras_entorno/out/caieiras_entorno_distribuicoes_qa.json \
+            --n-aponds-esperadas 7
+
+      - name: QA adicional de cobertura e valores publicados especiais
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          qa = json.loads(Path('/tmp/caieiras_entorno/out/caieiras_entorno_agregacao_qa.json').read_text(encoding='utf-8'))
+          assert qa['status'] == 'PASS'
+          assert qa['n_setores_matriz'] == 207
+          assert qa['n_aponds'] == 7
+          assert qa['n_variaveis_entorno'] == 105
+          print('VALORES_NAO_NUMERICOS=', {k:v['valores_nao_numericos'] for k,v in qa['fontes'].items()})
+          dq = json.loads(Path('/tmp/caieiras_entorno/out/caieiras_entorno_distribuicoes_qa.json').read_text(encoding='utf-8'))
+          assert dq['status'] == 'PASS', dq
+          assert dq['n_aponds'] == 7
+          assert dq['n_grupos_qa'] == 240
+          print('PASS QA final', dq)
           PY
 
-      - name: Publica diagnostico
+      - name: Resume QA
         if: always()
-        run: echo 'Diagnostico de fonte oficial concluido; nenhum resultado estatistico promovido nesta rodada.'
+        run: |
+          echo '=== agregacao ==='
+          cat /tmp/caieiras_entorno/out/caieiras_entorno_agregacao_qa.json || true
+          echo '=== distribuicoes ==='
+          cat /tmp/caieiras_entorno/out/caieiras_entorno_distribuicoes_qa.json || true
+
+      - name: Publica artefatos de QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-caieiras-entorno-qa
+          path: /tmp/caieiras_entorno/out/**
+          if-no-files-found: warn
+          retention-days: 14
