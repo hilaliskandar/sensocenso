@@ -1,0 +1,13 @@
+{
+  "3509007": {
+    "municipio": "Caieiras",
+    "aponds": ["A01", "A02", "A03", "A04", "A05", "A06", "A07"],
+    "blocos": [["A01", "A02", "A03", "A04", "A05", "A06", "A07"]],
+    "n_aponds": 7,
+    "n_setores": 207,
+    "rotulos": "Área 001–Área 007",
+    "origem_rotulos": "Definida automaticamente",
+    "unidade_estatistica": "APOND",
+    "regra_entorno": "somar contadores setoriais por APOND antes do cálculo dos percentuais bruto e no domínio aplicável"
+  }
+}

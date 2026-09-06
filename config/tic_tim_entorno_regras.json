@@ -1,0 +1,103 @@
+{
+  "universos": {
+    "V050": "Domicílios",
+    "V052": "Moradores",
+    "V054": "Faces"
+  },
+  "tabelas": {
+    "E01": {
+      "nome": "Circulação da via",
+      "categorias": [
+        {"sufixo": "01", "categoria": "Caminhão, ônibus", "aplicavel": true},
+        {"sufixo": "02", "categoria": "Carros de passeio ou van", "aplicavel": true},
+        {"sufixo": "03", "categoria": "Pedestres, bicicletas e motocicletas", "aplicavel": true},
+        {"sufixo": "04", "categoria": "Aquavia", "aplicavel": true},
+        {"sufixo": "05", "categoria": "Saltado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = categorias substantivas de circulação; Saltado fica fora."
+    },
+    "E02": {
+      "nome": "Pavimentação",
+      "categorias": [
+        {"sufixo": "06", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "07", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "08", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com circulação Aquavia + Saltado."
+    },
+    "E03": {
+      "nome": "Bueiro / boca de lobo",
+      "categorias": [
+        {"sufixo": "09", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "10", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "11", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com circulação Aquavia + Saltado."
+    },
+    "E04": {
+      "nome": "Iluminação pública",
+      "categorias": [
+        {"sufixo": "12", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "13", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "14", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com circulação Aquavia + Saltado."
+    },
+    "E05": {
+      "nome": "Ponto de ônibus",
+      "categorias": [
+        {"sufixo": "15", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "16", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "17", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com circulação Aquavia + Saltado."
+    },
+    "E06": {
+      "nome": "Via sinalizada para bicicleta",
+      "categorias": [
+        {"sufixo": "18", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "19", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "20", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com circulação Aquavia + Saltado."
+    },
+    "E07": {
+      "nome": "Calçada",
+      "categorias": [
+        {"sufixo": "21", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "22", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "23", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com circulação Aquavia + Saltado."
+    },
+    "E08": {
+      "nome": "Obstáculo na calçada",
+      "categorias": [
+        {"sufixo": "24", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "25", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "26", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com ausência/não aplicação de calçada."
+    },
+    "E09": {
+      "nome": "Rampa para cadeirante",
+      "categorias": [
+        {"sufixo": "27", "categoria": "Sim", "aplicavel": true},
+        {"sufixo": "28", "categoria": "Não", "aplicavel": true},
+        {"sufixo": "29", "categoria": "Não declarado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = Sim + Não; Não declarado coincide com ausência/não aplicação de calçada."
+    },
+    "E10": {
+      "nome": "Arborização",
+      "categorias": [
+        {"sufixo": "30", "categoria": "Sem árvores", "aplicavel": true},
+        {"sufixo": "31", "categoria": "1 a 2 árvores", "aplicavel": true},
+        {"sufixo": "32", "categoria": "3 a 4 árvores", "aplicavel": true},
+        {"sufixo": "33", "categoria": "5 ou mais árvores", "aplicavel": true},
+        {"sufixo": "34", "categoria": "Saltado", "aplicavel": false}
+      ],
+      "regra_dominio": "Domínio aplicável = classes substantivas de arborização; Saltado fica fora."
+    }
+  }
+}
