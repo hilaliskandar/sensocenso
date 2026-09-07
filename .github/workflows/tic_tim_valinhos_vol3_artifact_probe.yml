@@ -31,12 +31,16 @@ jobs:
       - name: Inspect CSV and QA schemas
         run: |
           python - <<'PY'
-          import pandas as pd, glob, json, os
+          import csv, glob, json, os
           for f in glob.glob('/tmp/ent/**/*.csv', recursive=True):
-              d=pd.read_csv(f)
-              print('\nCSV',os.path.basename(f),'shape',d.shape)
-              print('COLS',list(d.columns))
-              print(d.head(3).to_string(index=False))
+              with open(f,encoding='utf-8-sig',newline='') as h:
+                  r=csv.reader(h); rows=[]
+                  try: header=next(r)
+                  except StopIteration: header=[]
+                  for _,row in zip(range(3),r): rows.append(row)
+              print('\nCSV',os.path.basename(f))
+              print('COLS',header)
+              for row in rows: print('ROW',row)
           for f in glob.glob('/tmp/ent/**/*.json', recursive=True):
               print('\nJSON',os.path.basename(f))
               try:
