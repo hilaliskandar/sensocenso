@@ -1,0 +1,131 @@
+name: TIC-TIM Campinas Entorno QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-campinas-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_campinas_entorno_qa.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  entorno-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instala dependencias
+        run: python -m pip install --disable-pip-version-check pandas numpy
+
+      - name: Recompoe e valida matriz Setor-APOND auditada
+        run: |
+          mkdir -p /tmp/campinas_entorno/raw /tmp/campinas_entorno/csv /tmp/campinas_entorno/out
+          cat data/tic_tim/campinas_mapping_part{1,2,3,4}.b64 | tr -d '\n' | base64 -d | gunzip > /tmp/campinas_entorno/campinas_setor_apond_2592.csv
+          python - <<'PY2'
+          import pandas as pd
+          p='/tmp/campinas_entorno/campinas_setor_apond_2592.csv'
+          d=pd.read_csv(p,dtype=str)
+          assert list(d.columns)==['CD_SETOR','APOND'], d.columns.tolist()
+          assert len(d)==2592 and d.CD_SETOR.nunique()==2592
+          assert d.APOND.nunique()==35
+          expected={'3509502002':68,'3509502003':114,'3509502004':79,'3509502005':64,'3509502006':81,'3509502007':62,'3509502008':66,'3509502009':142,'3509502010':86,'3509502011':102,'3509502012':81,'3509502013':63,'3509502014':74,'3509502015':64,'3509502016':55,'3509502017':69,'3509502018':53,'3509502019':66,'3509502020':96,'3509502021':67,'3509502022':91,'3509502023':80,'3509502024':83,'3509502025':93,'3509502026':62,'3509502027':90,'3509502028':57,'3509502029':65,'3509502030':47,'3509502031':65,'3509502032':73,'3509502033':63,'3509502034':58,'3509502035':57,'3509502036':56}
+          observed=d.groupby('APOND').size().to_dict()
+          assert observed==expected, (observed,expected)
+          print('PASS mapping setores=2592 aponds=35')
+          PY2
+
+      - name: Baixa agregados oficiais de Entorno
+        run: |
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/campinas_entorno/raw/domicilios.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/campinas_entorno/raw/moradores.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_faces_BR.zip" -o /tmp/campinas_entorno/raw/faces.zip
+          sha256sum /tmp/campinas_entorno/raw/*.zip | tee /tmp/campinas_entorno/out/fontes_sha256.txt
+          for z in /tmp/campinas_entorno/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/campinas_entorno/csv; done
+
+      - name: Identifica series V050 V052 V054
+        run: |
+          python - <<'PY2'
+          from pathlib import Path
+          import pandas as pd
+          root=Path('/tmp/campinas_entorno/csv'); achados={}
+          for p in root.glob('*.csv'):
+              h=pd.read_csv(p,sep=';',nrows=0,encoding='utf-8-sig')
+              cols=[str(c).upper() for c in h.columns]
+              for pref in ('V050','V052','V054'):
+                  if f'{pref}00' in cols and f'{pref}34' in cols:
+                      achados[pref]=str(p)
+          assert set(achados)=={'V050','V052','V054'}, achados
+          Path('/tmp/campinas_entorno/paths.env').write_text('\n'.join(f'{k}={v}' for k,v in achados.items())+'\n')
+          print(achados)
+          PY2
+
+      - name: Agrega 105 contadores por APOND
+        run: |
+          . /tmp/campinas_entorno/paths.env
+          python scripts/tic_tim/agregar_entorno_apond_csv.py \
+            --domicilios "$V050" \
+            --moradores "$V052" \
+            --faces "$V054" \
+            --matriz /tmp/campinas_entorno/campinas_setor_apond_2592.csv \
+            --saida /tmp/campinas_entorno/out/campinas_entorno_contadores.csv \
+            --qa /tmp/campinas_entorno/out/campinas_entorno_agregacao_qa.json \
+            --n-setores-esperados 2592 \
+            --n-aponds-esperadas 35
+
+      - name: Calcula 30 distribuicoes
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py \
+            --contadores /tmp/campinas_entorno/out/campinas_entorno_contadores.csv \
+            --config config/tic_tim_entorno_regras.json \
+            --saida /tmp/campinas_entorno/out/campinas_entorno_30_distribuicoes.csv \
+            --qa /tmp/campinas_entorno/out/campinas_entorno_distribuicoes_qa.json \
+            --n-aponds-esperadas 35
+
+      - name: QA estrutural final
+        run: |
+          python - <<'PY2'
+          import json, pandas as pd
+          a=json.load(open('/tmp/campinas_entorno/out/campinas_entorno_agregacao_qa.json'))
+          d=json.load(open('/tmp/campinas_entorno/out/campinas_entorno_distribuicoes_qa.json'))
+          c=pd.read_csv('/tmp/campinas_entorno/out/campinas_entorno_contadores.csv',dtype={'APOND':str})
+          long=pd.read_csv('/tmp/campinas_entorno/out/campinas_entorno_30_distribuicoes.csv',dtype={'APOND':str})
+          assert a['status']=='PASS'
+          assert a['n_setores_matriz']==2592 and a['n_aponds']==35 and a['n_variaveis_entorno']==105
+          assert d['status']=='PASS' and d['n_aponds']==35 and d['n_grupos_qa']==1080
+          assert len(c)==36 and c['APOND'].nunique()==36 and 'MUNICIPIO' in set(c['APOND'])
+          assert long[['APOND','Tabela','Universo']].drop_duplicates().shape[0]==1080
+          print('PASS AGREGACAO', a['n_setores_matriz'], a['n_aponds'], a['n_variaveis_entorno'])
+          print('PASS DISTRIBUICOES grupos=', d['n_grupos_qa'])
+          for univ, q in a['fontes'].items():
+              print(univ, 'publicados=',q['n_setores_com_registro_publicado'],'sem_registro=',q['n_setores_sem_registro_publicado'])
+          PY2
+
+      - name: Persiste resultados na branch
+        run: |
+          mkdir -p data/tic_tim/campinas_entorno
+          cp /tmp/campinas_entorno/campinas_setor_apond_2592.csv data/tic_tim/campinas_setor_apond_2592.csv
+          cp /tmp/campinas_entorno/out/* data/tic_tim/campinas_entorno/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/campinas_setor_apond_2592.csv data/tic_tim/campinas_entorno
+          if ! git diff --cached --quiet; then
+            git commit -m 'Persist audited Campinas Entorno results'
+            git push
+          fi
+
+      - name: Publica artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-campinas-entorno-qa
+          path: /tmp/campinas_entorno/out/**
+          retention-days: 14
