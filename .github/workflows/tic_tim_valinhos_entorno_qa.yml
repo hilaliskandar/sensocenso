@@ -1,0 +1,89 @@
+name: TIC-TIM Valinhos Entorno QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-valinhos-apond-pipeline
+    paths:
+      - '.github/workflows/tic_tim_valinhos_entorno_qa.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  entorno-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependencias
+        run: python -m pip install --disable-pip-version-check pandas numpy
+      - name: Valida composição Setor-APOND auditada
+        run: |
+          mkdir -p /tmp/valinhos_entorno/raw /tmp/valinhos_entorno/csv /tmp/valinhos_entorno/out
+          python - <<'PY2'
+          import pandas as pd
+          p='data/tic_tim/valinhos_setor_apond_233.csv'
+          d=pd.read_csv(p,dtype=str)
+          assert len(d)==233 and d.CD_SETOR.nunique()==233
+          expected={'3556206001':30,'3556206002':24,'3556206003':29,'3556206004':27,'3556206005':56,'3556206006':32,'3556206007':35}
+          assert d.groupby('APOND').size().to_dict()==expected
+          print('PASS mapping', expected)
+          PY2
+      - name: Baixa agregados oficiais de Entorno
+        run: |
+          BASE='https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_Caracteristicas_urbanisticas_do_entorno_dos_domicilios/Agregados_por_Setor_csv'
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_domic%C3%ADlios_BR.zip" -o /tmp/valinhos_entorno/raw/domicilios.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_moradores_BR.zip" -o /tmp/valinhos_entorno/raw/moradores.zip
+          curl --fail --location --retry 3 "$BASE/Agregados_por_setores_entorno_faces_BR.zip" -o /tmp/valinhos_entorno/raw/faces.zip
+          for z in /tmp/valinhos_entorno/raw/*.zip; do unzip -j "$z" '*.csv' -d /tmp/valinhos_entorno/csv; done
+      - name: Identifica séries
+        run: |
+          python - <<'PY2'
+          from pathlib import Path
+          import pandas as pd
+          root=Path('/tmp/valinhos_entorno/csv'); achados={}
+          for p in root.glob('*.csv'):
+              h=pd.read_csv(p,sep=';',nrows=0,encoding='utf-8-sig'); cols=[str(c).upper() for c in h.columns]
+              for pref in ('V050','V052','V054'):
+                  if f'{pref}00' in cols and f'{pref}34' in cols: achados[pref]=str(p)
+          assert set(achados)=={'V050','V052','V054'}, achados
+          Path('/tmp/valinhos_entorno/paths.env').write_text('\n'.join(f'{k}={v}' for k,v in achados.items())+'\n')
+          PY2
+      - name: Agrega contadores
+        run: |
+          . /tmp/valinhos_entorno/paths.env
+          python scripts/tic_tim/agregar_entorno_apond_csv.py --domicilios "$V050" --moradores "$V052" --faces "$V054" --matriz data/tic_tim/valinhos_setor_apond_233.csv --saida /tmp/valinhos_entorno/out/valinhos_entorno_contadores.csv --qa /tmp/valinhos_entorno/out/valinhos_entorno_agregacao_qa.json --n-setores-esperados 233 --n-aponds-esperadas 7
+      - name: Calcula 30 distribuições
+        run: |
+          python scripts/tic_tim/calcular_entorno_apond.py --contadores /tmp/valinhos_entorno/out/valinhos_entorno_contadores.csv --config config/tic_tim_entorno_regras.json --saida /tmp/valinhos_entorno/out/valinhos_entorno_30_distribuicoes.csv --qa /tmp/valinhos_entorno/out/valinhos_entorno_distribuicoes_qa.json --n-aponds-esperadas 7
+      - name: Valida QA final
+        run: |
+          python - <<'PY2'
+          import json
+          a=json.load(open('/tmp/valinhos_entorno/out/valinhos_entorno_agregacao_qa.json'))
+          d=json.load(open('/tmp/valinhos_entorno/out/valinhos_entorno_distribuicoes_qa.json'))
+          assert a['status']=='PASS' and a['n_setores_matriz']==233 and a['n_aponds']==7 and a['n_variaveis_entorno']==105
+          assert d['status']=='PASS' and d['n_aponds']==7 and d['n_grupos_qa']==240
+          print('PASS AGREGACAO',a)
+          print('PASS DISTRIBUICOES',d)
+          PY2
+      - name: Persiste resultados
+        run: |
+          mkdir -p data/tic_tim/valinhos_entorno
+          cp /tmp/valinhos_entorno/out/* data/tic_tim/valinhos_entorno/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/tic_tim/valinhos_setor_apond_233.csv data/tic_tim/valinhos_entorno
+          if ! git diff --cached --quiet; then git commit -m 'Persist audited Valinhos Entorno results'; git push; fi
+      - name: Publica artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tic-tim-valinhos-entorno-qa
+          path: /tmp/valinhos_entorno/out/**
+          retention-days: 14
