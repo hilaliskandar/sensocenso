@@ -1,0 +1,33 @@
+name: TIC-TIM Valinhos Volume III Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [tic-tim-valinhos-apond-pipeline]
+    paths:
+      - '.github/workflows/tic_tim_valinhos_vol3_probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download builder from Drive
+        run: |
+          python -m pip install --disable-pip-version-check gdown
+          gdown 'https://drive.google.com/uc?id=1p7q8m5QUnEJMRxCDM3zsfgr2xCSfGQwA' -O /tmp/build_volume3_vinhedo_phased_v2.py
+      - name: Inspect builder structure
+        run: |
+          echo '=== SHA ==='
+          sha256sum /tmp/build_volume3_vinhedo_phased_v2.py
+          echo '=== ARGPARSE / CONSTANTS ==='
+          grep -nE 'ArgumentParser|add_argument|VINHEDO|Vinhedo|3556701|APOND|BASE|GPKG|OUT|phase|entorno|append|apend|TOTAL|POP|DOM|7165|2572|76540|27663' /tmp/build_volume3_vinhedo_phased_v2.py | head -n 250
+          echo '=== FIRST 120 ==='
+          sed -n '1,120p' /tmp/build_volume3_vinhedo_phased_v2.py
