@@ -1,0 +1,69 @@
+name: TIC-TIM APOND Cartografia Parametrizada QA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - tic-tim-apond-cartografia-parametrizada
+    paths:
+      - 'scripts/tic_tim/build_cartografia_apond.py'
+      - 'config/tic_tim/apond/**'
+      - '.github/workflows/tic_tim_apond_cartografia_regression.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  louveira-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependências
+        run: python -m pip install --disable-pip-version-check geopandas pyogrio shapely matplotlib pandas
+      - name: Baixa fontes oficiais IBGE
+        run: |
+          mkdir -p /tmp/apond/setores /tmp/apond/faces /tmp/apond/out
+          curl --fail --location --retry 3 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/malha_com_atributos/setores/shp/UF/SP/SP_setores_CD2022.zip' -o /tmp/apond/setores.zip
+          curl --fail --location --retry 3 'https://geoftp.ibge.gov.br/recortes_para_fins_estatisticos/malha_de_setores_censitarios/censo_2022/base_de_faces_de_logradouros_versao_2022_censo_demografico/shp/SP_faces_de_logradouros_2022_shp.zip' -o /tmp/apond/faces.zip
+          unzip -q /tmp/apond/setores.zip -d /tmp/apond/setores
+          python - <<'PY'
+          import zipfile
+          z=zipfile.ZipFile('/tmp/apond/faces.zip')
+          target=[n for n in z.namelist() if '3527306' in n]
+          assert target
+          for n in target: z.extract(n,'/tmp/apond/faces')
+          PY
+      - name: Executa builder parametrizado em Louveira
+        run: |
+          python scripts/tic_tim/build_cartografia_apond.py \
+            --config config/tic_tim/apond/louveira_cartografia.json \
+            --matriz data/tic_tim/louveira_setor_apond_92.csv \
+            --setores /tmp/apond/setores \
+            --faces /tmp/apond/faces \
+            --out-dir /tmp/apond/out
+      - name: Confere invariantes de regressão
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          q=json.loads(Path('/tmp/apond/out/TIC_TIM_Censo2022_Louveira_QA_CARTOGRAFIA_v1.json').read_text())
+          assert q['status']=='PASS'
+          assert q['n_setores']==92 and q['n_setores_unicos']==92
+          assert q['n_aponds']==3
+          assert q['setores_por_apond']=={'3527306001':30,'3527306002':27,'3527306003':35}
+          assert q['setores_faltantes']==[] and q['setores_extras']==[]
+          assert q['preflight_gpkg']['setores']['n']==92
+          assert q['preflight_gpkg']['aponds']['n']==3
+          assert q['preflight_gpkg']['faces']['n']>0
+          print('REGRESSION_PASS',q)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tic-tim-apond-cartografia-parametrizada-louveira
+          path: /tmp/apond/out/**
+          retention-days: 14
