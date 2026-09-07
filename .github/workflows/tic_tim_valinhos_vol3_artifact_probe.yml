@@ -1,0 +1,45 @@
+name: TIC-TIM Valinhos Volume III Artifact Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [tic-tim-valinhos-apond-pipeline]
+    paths: ['.github/workflows/tic_tim_valinhos_vol3_artifact_probe.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Entorno and cartography artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/ent /tmp/cart
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/hilaliskandar/sensocenso/actions/artifacts/10025002714/zip -o /tmp/ent.zip
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/hilaliskandar/sensocenso/actions/artifacts/10025211014/zip -o /tmp/cart.zip
+          unzip -q /tmp/ent.zip -d /tmp/ent
+          unzip -q /tmp/cart.zip -d /tmp/cart
+          echo '=== ENT FILES ==='; find /tmp/ent -maxdepth 3 -type f -printf '%p %s bytes\n'
+          echo '=== CART FILES ==='; find /tmp/cart -maxdepth 3 -type f -printf '%p %s bytes\n'
+      - name: Inspect CSV and QA schemas
+        run: |
+          python - <<'PY'
+          import pandas as pd, glob, json, os
+          for f in glob.glob('/tmp/ent/**/*.csv', recursive=True):
+              d=pd.read_csv(f)
+              print('\nCSV',os.path.basename(f),'shape',d.shape)
+              print('COLS',list(d.columns))
+              print(d.head(3).to_string(index=False))
+          for f in glob.glob('/tmp/ent/**/*.json', recursive=True):
+              print('\nJSON',os.path.basename(f))
+              try:
+                  j=json.load(open(f,encoding='utf-8')); print(json.dumps(j,ensure_ascii=False,indent=2)[:5000])
+              except Exception as e: print(e)
+          PY
