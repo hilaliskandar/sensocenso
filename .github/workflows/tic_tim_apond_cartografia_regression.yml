@@ -8,6 +8,7 @@ on:
     paths:
       - 'scripts/tic_tim/build_cartografia_apond.py'
       - 'config/tic_tim/apond/**'
+      - 'data/tic_tim/*_setor_apond_*.csv'
       - '.github/workflows/tic_tim_apond_cartografia_regression.yml'
 
 permissions:
@@ -66,4 +67,58 @@ jobs:
         with:
           name: tic-tim-apond-cartografia-parametrizada-louveira
           path: /tmp/apond/out/**
+          retention-days: 14
+
+  vinhedo-cartografia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instala dependências
+        run: python -m pip install --disable-pip-version-check geopandas pyogrio shapely matplotlib pandas
+      - name: Baixa fontes oficiais IBGE
+        run: |
+          mkdir -p /tmp/apond_vin/setores /tmp/apond_vin/faces /tmp/apond_vin/out
+          curl --fail --location --retry 3 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios/malha_com_atributos/setores/shp/UF/SP/SP_setores_CD2022.zip' -o /tmp/apond_vin/setores.zip
+          curl --fail --location --retry 3 'https://geoftp.ibge.gov.br/recortes_para_fins_estatisticos/malha_de_setores_censitarios/censo_2022/base_de_faces_de_logradouros_versao_2022_censo_demografico/shp/SP_faces_de_logradouros_2022_shp.zip' -o /tmp/apond_vin/faces.zip
+          unzip -q /tmp/apond_vin/setores.zip -d /tmp/apond_vin/setores
+          python - <<'PY'
+          import zipfile
+          z=zipfile.ZipFile('/tmp/apond_vin/faces.zip')
+          target=[n for n in z.namelist() if '3556701' in n]
+          assert target
+          for n in target: z.extract(n,'/tmp/apond_vin/faces')
+          PY
+      - name: Executa builder parametrizado em Vinhedo
+        run: |
+          python scripts/tic_tim/build_cartografia_apond.py \
+            --config config/tic_tim/apond/vinhedo_cartografia.json \
+            --matriz data/tic_tim/vinhedo_setor_apond_154.csv \
+            --setores /tmp/apond_vin/setores \
+            --faces /tmp/apond_vin/faces \
+            --out-dir /tmp/apond_vin/out
+      - name: Confere invariantes de Vinhedo
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          q=json.loads(Path('/tmp/apond_vin/out/TIC_TIM_Censo2022_Vinhedo_QA_CARTOGRAFIA_v1.json').read_text())
+          assert q['status']=='PASS'
+          assert q['n_setores']==154 and q['n_setores_unicos']==154
+          assert q['n_aponds']==6
+          assert q['setores_por_apond']=={'3556701001':21,'3556701002':26,'3556701003':22,'3556701004':22,'3556701005':31,'3556701006':32}
+          assert q['setores_faltantes']==[] and q['setores_extras']==[]
+          assert q['preflight_gpkg']['setores']['n']==154
+          assert q['preflight_gpkg']['aponds']['n']==6
+          assert q['preflight_gpkg']['faces']['n']>0
+          print('VINHEDO_PASS',q)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tic-tim-apond-cartografia-parametrizada-vinhedo
+          path: /tmp/apond_vin/out/**
           retention-days: 14
