@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "territorios": [
+    "3556206001",
+    "3556206002",
+    "3556206003",
+    "3556206004",
+    "3556206005",
+    "3556206006",
+    "3556206007",
+    "MUNICIPIO"
+  ],
+  "aponds": [
+    "3556206001",
+    "3556206002",
+    "3556206003",
+    "3556206004",
+    "3556206005",
+    "3556206006",
+    "3556206007"
+  ],
+  "n_aponds": 7,
+  "linha_municipal": true,
+  "n_distribuicoes_por_territorio": 30,
+  "n_grupos_qa": 240,
+  "max_desvio_soma_percentual_bruto": 1.4210854715202004e-14,
+  "max_desvio_soma_percentual_dominio": 1.4210854715202004e-14,
+  "erros": []
+}
