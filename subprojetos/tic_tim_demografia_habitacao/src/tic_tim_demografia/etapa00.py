@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 from .config import carregar_fontes, carregar_municipios, carregar_parametros
@@ -17,10 +18,13 @@ def executar(raiz: Path) -> None:
     paths = resolve_paths(raiz)
     paths.create()
 
+    grupos = dict(sorted(Counter(m.grupo_territorial for m in municipios).items()))
     resumo = {
         "municipios": len(municipios),
-        "coroa_interna": sum(m.coroa == "interna" for m in municipios),
-        "coroa_externa": sum(m.coroa == "externa" for m in municipios),
+        "grupos_territoriais": grupos,
+        # Campos mantidos para compatibilidade dos produtos TIC-TIM existentes.
+        "coroa_interna": grupos.get("interna", 0),
+        "coroa_externa": grupos.get("externa", 0),
         "anos_censitarios": parametros["projeto"]["anos_censitarios"],
         "fontes_declaradas": sorted(fontes["fontes"].keys()),
         "data_root": str(paths.data_root),
