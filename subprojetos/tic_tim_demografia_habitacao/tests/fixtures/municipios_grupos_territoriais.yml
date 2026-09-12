@@ -1,0 +1,18 @@
+municipios:
+  - codigo_ibge: "3500001"
+    nome: "A"
+    grupo_territorial: "subregiao_1"
+  - codigo_ibge: "3500002"
+    nome: "B"
+    grupo_territorial: "subregiao_1"
+  - codigo_ibge: "3500003"
+    nome: "C"
+    grupo_territorial: "subregiao_2"
+  - codigo_ibge: "3500004"
+    nome: "D"
+    grupo_territorial: "subregiao_2"
+validacao:
+  quantidade_esperada: 4
+  grupos_esperados:
+    subregiao_1: 2
+    subregiao_2: 2
