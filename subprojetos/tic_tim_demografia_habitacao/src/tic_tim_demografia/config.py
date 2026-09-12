@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,12 @@ import yaml
 class Municipio:
     codigo_ibge: str
     nome: str
-    coroa: str
+    grupo_territorial: str
+
+    @property
+    def coroa(self) -> str:
+        """Alias legado para compatibilidade com o pipeline TIC-TIM existente."""
+        return self.grupo_territorial
 
 
 def _ler_yaml(path: Path) -> dict[str, Any]:
@@ -25,14 +31,20 @@ def _ler_yaml(path: Path) -> dict[str, Any]:
 def carregar_municipios(path: Path) -> list[Municipio]:
     data = _ler_yaml(path)
     itens = data.get("municipios", [])
-    municipios = [
-        Municipio(
-            codigo_ibge=str(item["codigo_ibge"]),
-            nome=str(item["nome"]),
-            coroa=str(item["coroa"]),
+    municipios = []
+    for item in itens:
+        grupo = item.get("grupo_territorial", item.get("coroa"))
+        if grupo is None or not str(grupo).strip():
+            raise ValueError(
+                f"Município sem grupo territorial/coroa: {item.get('nome', '<sem nome>')}"
+            )
+        municipios.append(
+            Municipio(
+                codigo_ibge=str(item["codigo_ibge"]),
+                nome=str(item["nome"]),
+                grupo_territorial=str(grupo),
+            )
         )
-        for item in itens
-    ]
     validar_municipios(municipios, data.get("validacao", {}))
     return municipios
 
@@ -58,15 +70,26 @@ def validar_municipios(municipios: list[Municipio], regras: dict[str, Any]) -> N
     if presentes_excluidos:
         raise ValueError(f"Código explicitamente excluído presente: {presentes_excluidos}")
 
-    internas = sum(m.coroa == "interna" for m in municipios)
-    externas = sum(m.coroa == "externa" for m in municipios)
-    exp_internas = int(regras.get("quantidade_coroa_interna", 10))
-    exp_externas = int(regras.get("quantidade_coroa_externa", 20))
-    if (internas, externas) != (exp_internas, exp_externas):
-        raise ValueError(
-            "Distribuição de coroas inválida: "
-            f"interna={internas}/{exp_internas}, externa={externas}/{exp_externas}"
-        )
+    contagem_grupos = Counter(m.grupo_territorial for m in municipios)
+    grupos_esperados = regras.get("grupos_esperados")
+    if grupos_esperados is not None:
+        esperado = {str(k): int(v) for k, v in grupos_esperados.items()}
+        observado = dict(sorted(contagem_grupos.items()))
+        if observado != dict(sorted(esperado.items())):
+            raise ValueError(
+                f"Distribuição de grupos territoriais inválida: observado={observado}, esperado={esperado}"
+            )
+    else:
+        # Compatibilidade estrita com o contrato original TIC-TIM.
+        internas = contagem_grupos.get("interna", 0)
+        externas = contagem_grupos.get("externa", 0)
+        exp_internas = int(regras.get("quantidade_coroa_interna", 10))
+        exp_externas = int(regras.get("quantidade_coroa_externa", 20))
+        if (internas, externas) != (exp_internas, exp_externas):
+            raise ValueError(
+                "Distribuição de coroas inválida: "
+                f"interna={internas}/{exp_internas}, externa={externas}/{exp_externas}"
+            )
 
     corrigidos = {str(k): str(v) for k, v in regras.get("codigos_corrigidos", {}).items()}
     por_nome = {m.nome: m.codigo_ibge for m in municipios}
