@@ -17,6 +17,9 @@ from .proveniencia import registrar_arquivo, registrar_evento
 from .qa.regressao import carregar_oraculo_csv, comparar_com_oraculo
 
 
+TAMANHO_LOTE_SIDRA = 10
+
+
 def _carregar_selecao(path: Path) -> list[dict]:
     dados = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(dados, list) or len(dados) != 2:
@@ -79,6 +82,32 @@ def _ler_lotes(paths_lotes: list[Path], nome_idade: str, mapa: dict[str, str], a
     return combinado
 
 
+def _avaliar_regressao(longitudinal: pd.DataFrame, oraculo_path: Path) -> dict:
+    if not oraculo_path.exists():
+        raise FileNotFoundError(f"Oráculo de regressão versionado ausente: {oraculo_path}")
+    oraculo = carregar_oraculo_csv(oraculo_path)
+    codigos_produzidos = set(longitudinal["codigo_ibge"].astype(str))
+    codigos_oraculo = set(oraculo["codigo_ibge"].astype(str))
+    intersecao = codigos_produzidos.intersection(codigos_oraculo)
+
+    if codigos_oraculo.issubset(codigos_produzidos):
+        return comparar_com_oraculo(longitudinal, oraculo)
+    if intersecao:
+        raise AssertionError(
+            "Oráculo de regressão parcialmente sobreposto ao universo corrente; "
+            "revisão metodológica explícita é obrigatória. "
+            f"sobreposicao={sorted(intersecao)}"
+        )
+    return {
+        "status": "NOT_APPLICABLE_TERRITORY",
+        "reason": "oraculo_versionado_nao_pertence_ao_universo_territorial_corrente",
+        "municipios_oraculo": int(oraculo["codigo_ibge"].nunique()),
+        "municipios_produzidos": int(longitudinal["codigo_ibge"].nunique()),
+        "sobreposicao_municipal": 0,
+        "divergencias": None,
+    }
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     paths = resolve_paths(raiz)
@@ -97,13 +126,17 @@ def executar(raiz: Path) -> None:
 
     bases = []
     arquivos_brutos: list[str] = []
+    numero_lotes = (len(codigos) + TAMANHO_LOTE_SIDRA - 1) // TAMANHO_LOTE_SIDRA
     for item in selecao:
         tabela = int(item["tabela"])
         ano = int(item["periodo"])
         classificacoes = _classificacoes_consulta(item)
         mapa = _mapa_codigo_banda(item)
         raw_dir = paths.raw / "ibge" / "sidra" / "valores" / f"t{tabela}_{ano}"
-        esperados = [raw_dir / f"t{tabela}_lote_{i:02d}.json" for i in range(1, 4)]
+        esperados = [
+            raw_dir / f"t{tabela}_lote_{i:02d}.json"
+            for i in range(1, numero_lotes + 1)
+        ]
 
         if all(p.exists() for p in esperados):
             lotes = esperados
@@ -120,10 +153,15 @@ def executar(raiz: Path) -> None:
                 periodos=str(ano),
                 variaveis="allxp",
                 classificacoes=classificacoes,
-                tamanho_lote=10,
+                tamanho_lote=TAMANHO_LOTE_SIDRA,
                 manifesto=manifesto,
             )
 
+        if len(lotes) != numero_lotes:
+            raise ValueError(
+                f"Quantidade de lotes SIDRA inesperada para {tabela}/{ano}: "
+                f"{len(lotes)} != {numero_lotes}"
+            )
         arquivos_brutos.extend(str(p.relative_to(paths.data_root)) for p in lotes)
         base = _ler_lotes(
             lotes,
@@ -156,12 +194,8 @@ def executar(raiz: Path) -> None:
         longitudinal["pop_60_mais"] / longitudinal["pop_0_14"] * 100.0
     )
 
-    # Gate independente de regressão. O arquivo de sentinelas é pequeno,
-    # versionado e nunca participa dos cálculos; apenas compara resultados.
     oraculo_path = raiz / "tests/fixtures/oraculo_longitudinal_2000_2010_sentinelas.csv"
-    if not oraculo_path.exists():
-        raise FileNotFoundError(f"Oráculo de regressão versionado ausente: {oraculo_path}")
-    regressao = comparar_com_oraculo(longitudinal, carregar_oraculo_csv(oraculo_path))
+    regressao = _avaliar_regressao(longitudinal, oraculo_path)
 
     destino_dir = paths.processed / "municipal"
     destino_dir.mkdir(parents=True, exist_ok=True)
@@ -179,6 +213,8 @@ def executar(raiz: Path) -> None:
         "nulos_bandas": int(
             longitudinal[["pop_0_14", "pop_15_59", "pop_60_mais"]].isna().sum().sum()
         ),
+        "numero_lotes_por_tabela": numero_lotes,
+        "tamanho_lote_sidra": TAMANHO_LOTE_SIDRA,
         "regressao_oraculo": regressao,
         "arquivos_brutos": arquivos_brutos,
         "saida_parquet": str(parquet.relative_to(paths.data_root)),
