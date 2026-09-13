@@ -127,7 +127,7 @@ class SidraClient:
             if tentativa < self.tentativas:
                 time.sleep(self.backoff_inicial * (2 ** (tentativa - 1)))
         raise RuntimeError(
-            f"SIDRA/IBGE indisponível após {self.tentativas} tentativas para {url}: {ultimo_erro}"
+            f"SIDRA indisponível após {self.tentativas} tentativas para {url}: {ultimo_erro}"
         ) from ultimo_erro
 
     def descritor(self, tabela: int) -> Any:
