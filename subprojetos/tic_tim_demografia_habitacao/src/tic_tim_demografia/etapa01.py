@@ -14,6 +14,8 @@ from .proveniencia import registrar_evento
 FONTES_SIDRA_COM_DESCRITOR = (
     "sidra_2000_idade",
     "sidra_2010_idade",
+    "sidra_historico_sexo_situacao",
+    "sidra_historico_alfabetizacao_idade",
     "sidra_2000_2010_domicilios",
     "sidra_2000_2010_unipessoais",
 )
