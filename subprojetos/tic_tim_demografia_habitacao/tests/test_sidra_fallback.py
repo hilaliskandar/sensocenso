@@ -90,15 +90,14 @@ def test_agregados_normaliza_para_contrato_do_descritor() -> None:
 
 
 def test_cliente_agregados_constroi_url_e_normaliza(monkeypatch) -> None:
-    cliente = SidraClient(tentativas=1)
     chamadas: list[str] = []
 
-    def fake_get_json(url: str):
+    def fake_get_json(self, url: str):
         chamadas.append(url)
         return _payload_agregados()
 
-    monkeypatch.setattr(cliente, "_get_json", fake_get_json)
-    descritor = cliente.descritor_agregados(1518, 2000)
+    monkeypatch.setattr(SidraClient, "_get_json", fake_get_json)
+    descritor = SidraClient(tentativas=1).descritor_agregados(1518, 2000)
 
     assert chamadas == [
         "https://servicodados.ibge.gov.br/api/v3/agregados/1518/"
