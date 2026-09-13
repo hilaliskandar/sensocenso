@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from tic_tim_demografia.fontes.sidra import (
+    SidraClient,
     baixar_descritor_tabela,
     normalizar_descritor_agregados,
 )
@@ -28,6 +29,18 @@ def _payload_agregados() -> list[dict]:
                             "id": "2",
                             "nome": "Sexo",
                             "categoria": {"0": "Total", "4": "Homens", "5": "Mulheres"},
+                        },
+                        {
+                            "id": "58",
+                            "nome": "Grupos de idade",
+                            "categoria": {
+                                "0": "Total",
+                                "1140": "0 a 4 anos",
+                                "1141": "5 a 9 anos",
+                                "1142": "10 a 14 anos",
+                                "1143": "15 a 19 anos",
+                                "1163": "60 a 64 anos",
+                            },
                         },
                     ],
                     "series": [],
@@ -62,6 +75,7 @@ def test_agregados_normaliza_para_contrato_do_descritor() -> None:
     assert [(c.codigo, c.nome) for c in classificacoes] == [
         ("1", "Situação do domicílio"),
         ("2", "Sexo"),
+        ("58", "Grupos de idade"),
     ]
     situacao = classificacoes[0]
     assert [(c.codigo, c.nome) for c in situacao.categorias] == [
@@ -69,6 +83,29 @@ def test_agregados_normaliza_para_contrato_do_descritor() -> None:
         ("1", "Urbana"),
         ("2", "Rural"),
     ]
+    idade = classificacoes[2]
+    assert idade.nome == "Grupos de idade"
+    assert any(c.nome == "0 a 4 anos" for c in idade.categorias)
+    assert any(c.nome == "60 a 64 anos" for c in idade.categorias)
+
+
+def test_cliente_agregados_constroi_url_e_normaliza(monkeypatch) -> None:
+    cliente = SidraClient(tentativas=1)
+    chamadas: list[str] = []
+
+    def fake_get_json(url: str):
+        chamadas.append(url)
+        return _payload_agregados()
+
+    monkeypatch.setattr(cliente, "_get_json", fake_get_json)
+    descritor = cliente.descritor_agregados(1518, 2000)
+
+    assert chamadas == [
+        "https://servicodados.ibge.gov.br/api/v3/agregados/1518/"
+        "periodos/2000/variaveis?localidades=BR"
+    ]
+    nomes = {c.nome for c in extrair_classificacoes(descritor)}
+    assert {"Situação do domicílio", "Sexo", "Grupos de idade"}.issubset(nomes)
 
 
 def test_baixar_descritor_usa_fallback_oficial(tmp_path: Path) -> None:
@@ -98,4 +135,11 @@ def test_baixar_descritor_usa_fallback_oficial(tmp_path: Path) -> None:
 
     assert resultado == destino
     assert destino.exists()
-    assert len(extrair_classificacoes(json.loads(destino.read_text(encoding="utf-8")))) == 2
+    classificacoes = extrair_classificacoes(
+        json.loads(destino.read_text(encoding="utf-8"))
+    )
+    assert {c.nome for c in classificacoes} == {
+        "Situação do domicílio",
+        "Sexo",
+        "Grupos de idade",
+    }
