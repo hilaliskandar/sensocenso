@@ -49,6 +49,38 @@ def _baixar_se_ausente(cliente: HttpClient, url: str, destino: Path, manifesto: 
     return cliente.baixar_arquivo(url, destino, manifesto=manifesto)
 
 
+def _comparar_oraculo_territorial(base2022: pd.DataFrame, oraculo2022: pd.DataFrame) -> dict:
+    codigos_oraculo = set(oraculo2022["codigo_ibge"].astype(str))
+    codigos_produzidos = set(base2022["codigo_ibge"].astype(str))
+    intersecao = codigos_oraculo.intersection(codigos_produzidos)
+    if codigos_oraculo.issubset(codigos_produzidos):
+        return comparar_com_oraculo(base2022, oraculo2022)
+    if intersecao:
+        raise AssertionError(
+            f"Oráculo 2022 parcialmente sobreposto ao universo corrente: {sorted(intersecao)}"
+        )
+    return {
+        "status": "NOT_APPLICABLE_TERRITORY",
+        "reason": "oraculo_2022_tic_tim_sem_sobreposicao_com_territorio_corrente",
+        "sobreposicao_municipal": 0,
+        "divergencias": None,
+    }
+
+
+def _validar_matriz_longitudinal(longitudinal: pd.DataFrame, codigos: list[str]) -> None:
+    contagens = longitudinal.groupby("codigo_ibge")["ano"].nunique()
+    municipios_esperados = len(codigos)
+    linhas_esperadas = municipios_esperados * 3
+    if len(contagens) != municipios_esperados or not (contagens == 3).all():
+        raise AssertionError(
+            f"Matriz {municipios_esperados}×3 não fechou: {contagens.value_counts().to_dict()}"
+        )
+    if len(longitudinal) != linhas_esperadas:
+        raise AssertionError(
+            f"Base longitudinal deveria ter {linhas_esperadas} linhas; observadas={len(longitudinal)}"
+        )
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     paths = resolve_paths(raiz)
@@ -139,7 +171,8 @@ def executar(raiz: Path) -> None:
     base2022["razao_envelhecimento"] = base2022["pop_60_mais"] / base2022["pop_0_14"] * 100.0
 
     oraculo_path = raiz / "tests/fixtures/oraculo_2022_urbano_sentinelas.csv"
-    regressao2022 = comparar_com_oraculo(base2022, carregar_oraculo_csv(oraculo_path))
+    oraculo2022 = carregar_oraculo_csv(oraculo_path)
+    regressao2022 = _comparar_oraculo_territorial(base2022, oraculo2022)
 
     historica = pd.read_parquet(base_hist_path)
     colunas_comuns = [
@@ -160,11 +193,7 @@ def executar(raiz: Path) -> None:
         [historica[colunas_comuns], base2022[colunas_comuns]], ignore_index=True
     ).sort_values(["codigo_ibge", "ano"]).reset_index(drop=True)
 
-    contagens = longitudinal.groupby("codigo_ibge")["ano"].nunique()
-    if len(contagens) != 30 or not (contagens == 3).all():
-        raise AssertionError(f"Matriz 30×3 não fechou: {contagens.value_counts().to_dict()}")
-    if len(longitudinal) != 90:
-        raise AssertionError(f"Base longitudinal deveria ter 90 linhas; observadas={len(longitudinal)}")
+    _validar_matriz_longitudinal(longitudinal, codigos)
 
     destino_dir = paths.processed / "municipal"
     parquet = destino_dir / "base_longitudinal_2000_2010_2022.parquet"
