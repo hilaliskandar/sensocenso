@@ -18,6 +18,26 @@ fontes:
     values_base_url: "https://apisidra.ibge.gov.br/values"
     uso: "estrutura etária municipal de 2010, complementada pela Sinopse quando necessário"
 
+  sidra_historico_sexo_situacao:
+    instituicao: "IBGE/SIDRA"
+    tabela: 202
+    periodo: "1970, 1980, 1991, 2000, 2010"
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/202"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "fonte histórica de população residente por sexo e situação do domicílio; suporte futuro a séries de urbanização e composição por sexo"
+    regra: "nesta versão apenas congelar descritor; não incorporar a indicadores antes de gate semântico e harmonização específicos"
+
+  sidra_historico_alfabetizacao_idade:
+    instituicao: "IBGE/SIDRA"
+    tabela: 204
+    periodo: "1991, 2000"
+    nivel_territorial: "Município"
+    descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/204"
+    values_base_url: "https://apisidra.ibge.gov.br/values"
+    uso: "fonte histórica de alfabetização por grupos de idade; suporte futuro ao eixo educacional longitudinal"
+    regra: "nesta versão apenas congelar descritor; não presumir comparabilidade com 2010/2022 sem gate metodológico específico"
+
   sidra_2000_2010_domicilios:
     instituicao: "IBGE/SIDRA"
     tabela: 156
