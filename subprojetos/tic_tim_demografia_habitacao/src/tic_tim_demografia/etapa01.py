@@ -28,6 +28,12 @@ FONTES_COM_INDICE = (
 )
 
 
+def _periodo_fallback(valor: object) -> str:
+    """Seleciona um período real configurado para consulta estrutural na API v3."""
+    texto = str(valor)
+    return texto.split(",", 1)[0].strip()
+
+
 def executar(raiz: Path) -> None:
     raiz = raiz.resolve()
     fontes = carregar_fontes(raiz / "config/fontes.yml")
@@ -46,13 +52,19 @@ def executar(raiz: Path) -> None:
 
     tabelas_vistas: set[int] = set()
     for chave in FONTES_SIDRA_COM_DESCRITOR:
-        tabela = int(fontes["fontes"][chave]["tabela"])
+        fonte = fontes["fontes"][chave]
+        tabela = int(fonte["tabela"])
         if tabela in tabelas_vistas:
             continue
         tabelas_vistas.add(tabela)
         destino = destino_sidra / f"descritor_tabela_{tabela}.json"
         if not destino.exists():
-            baixar_descritor_tabela(tabela, destino, manifesto=manifesto)
+            baixar_descritor_tabela(
+                tabela,
+                destino,
+                manifesto=manifesto,
+                periodo_fallback=_periodo_fallback(fonte["periodo"]),
+            )
         saidas.append(str(destino.relative_to(paths.data_root)))
 
         resumo = resumo_descritor(carregar_descritor(destino))
