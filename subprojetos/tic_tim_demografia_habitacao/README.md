@@ -194,9 +194,21 @@ Dois workflows específicos exercitam o subprojeto em ambiente limpo do GitHub A
 
 Esses workflows usam apenas permissões de leitura do conteúdo do repositório para a execução do pipeline e não dependem de segredos privados do projeto.
 
+## Transporte SIDRA e créditos
+
+Desde setembro de 2026, o endpoint legado `apisidra.ibge.gov.br` passou a responder a clientes programáticos com challenge do Cloudflare. Para preservar a reprodutibilidade sem automação de navegador, a aquisição de valores SIDRA é traduzida para a API oficial de Agregados do IBGE em `https://servicodados.ibge.gov.br/api/v3/agregados`, usando `view=flat`. A gramática interna das consultas continua sendo a do SIDRA e a URL efetivamente consultada é registrada na proveniência dos arquivos brutos.
+
+A solução adotada foi desenvolvida após auditoria de precedentes públicos e recebe os seguintes créditos:
+
+- **Sidney Bissoli — [SidneyBissoli/ibge-br-mcp](https://github.com/SidneyBissoli/ibge-br-mcp), licença MIT**: precedente principal. O módulo `src/sidra-agregados.ts` documenta o bloqueio do APISIDRA e demonstra a tradução para a API de Agregados com `view=flat`. A implementação deste repositório foi reescrita em Python, preservando a ideia e o contrato de transporte, sem cópia literal do código-fonte.
+- **Allan Batista Martins — [allanbmartins/Projeto_ETL_RFB_IBGE_ANP](https://github.com/allanbmartins/Projeto_ETL_RFB_IBGE_ANP), licença MIT**: precedente complementar de uso operacional da API oficial de Agregados para dados municipais do IBGE.
+- **Telmo Brugnara — [tbrugz/ribge](https://github.com/tbrugz/ribge), licença GPL-3**: precedente arquitetural para fallback por downloads oficiais do IBGE. Nenhum código GPL foi incorporado nesta solução.
+
+Esses créditos distinguem inspiração arquitetural de incorporação literal de código. Se no futuro houver cópia substancial de código de terceiros, os avisos de copyright e licença correspondentes deverão ser preservados.
+
 ## Falhas transitórias de fonte
 
-A execução live consulta serviços públicos. Timeouts ou indisponibilidades temporárias do SIDRA/IBGE podem causar uma falha de aquisição sem indicar erro metodológico. O pipeline registra a falha e deve ser reexecutado; não substitui silenciosamente a fonte nem imputa valores para atravessar o gate.
+A execução live consulta serviços públicos. Timeouts ou indisponibilidades temporárias do SIDRA/IBGE podem causar uma falha de aquisição sem indicar erro metodológico. Para valores SIDRA, o transporte canônico é a API de Agregados v3 com `view=flat`; o endpoint legado APISIDRA não é usado como fallback enquanto exigir challenge de navegador. O pipeline registra a falha e não imputa valores para atravessar o gate.
 
 ## Desenvolvimento e governança
 
