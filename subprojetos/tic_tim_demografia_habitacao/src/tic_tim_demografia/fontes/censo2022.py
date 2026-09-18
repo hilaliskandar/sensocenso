@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 from typing import Iterable
 
+import geopandas as gpd
 import pandas as pd
 
 
@@ -242,6 +243,56 @@ def preparar_demografia_2022_setorial(setores: pd.DataFrame) -> pd.DataFrame:
         ]
     )
     return work[ordem].sort_values("codigo_setor").reset_index(drop=True)
+
+
+def integrar_demografia_setorial_geometria(
+    setores: pd.DataFrame,
+    geometrias: gpd.GeoDataFrame,
+    *,
+    crs_destino: str = "EPSG:4674",
+) -> gpd.GeoDataFrame:
+    """Associa o produto demografico setorial a malha oficial por codigo_setor.
+
+    O join e estritamente one-to-one. Nenhuma linha tabular pode ser perdida,
+    duplicada ou ganhar geometria vazia. O resultado e normalizado para
+    SIRGAS 2000 (EPSG:4674).
+    """
+    dados = setores.copy()
+    dados["codigo_setor"] = dados["codigo_setor"].astype("string").str.strip()
+    if dados["codigo_setor"].duplicated().any():
+        raise AssertionError("Produto demografico possui codigo_setor duplicado.")
+
+    geo = geometrias.copy()
+    if geo.crs is None:
+        raise ValueError("Malha oficial de setores sem CRS declarado.")
+    geo["codigo_setor"] = geo["codigo_setor"].astype("string").str.strip()
+    if geo["codigo_setor"].duplicated().any():
+        raise AssertionError("Malha oficial possui codigo_setor duplicado.")
+
+    faltantes = sorted(set(dados["codigo_setor"].astype(str)) - set(geo["codigo_setor"].astype(str)))
+    if faltantes:
+        raise AssertionError(
+            "Produto demografico possui setores sem geometria oficial: "
+            f"n={len(faltantes)}; amostra={faltantes[:20]}"
+        )
+
+    espacial = geo[["codigo_setor", "geometry"]].merge(
+        dados,
+        on="codigo_setor",
+        how="inner",
+        validate="one_to_one",
+    )
+    espacial = gpd.GeoDataFrame(espacial, geometry="geometry", crs=geo.crs)
+    if len(espacial) != len(dados):
+        raise AssertionError(
+            f"Join demografia x malha alterou cardinalidade: {len(espacial)} != {len(dados)}"
+        )
+    if espacial.geometry.isna().any() or espacial.geometry.is_empty.any():
+        raise AssertionError("GeoParquet demografico contem geometria ausente ou vazia.")
+    espacial = espacial.to_crs(crs_destino)
+    if espacial.crs is None or espacial.crs.to_epsg() != 4674:
+        raise AssertionError(f"CRS espacial inesperado apos normalizacao: {espacial.crs}")
+    return espacial.sort_values("codigo_setor").reset_index(drop=True)
 
 
 def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
