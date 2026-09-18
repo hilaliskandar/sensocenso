@@ -11,11 +11,13 @@ from .config import carregar_municipios
 from .fontes.censo2022 import (
     agregar_demografia_2022_municipio,
     diagnosticar_simbolos_demografia,
+    integrar_demografia_setorial_geometria,
     preparar_demografia_2022_setorial,
     ler_demografia_setorial_zip,
     ler_setores_urbanos_basico_zip,
 )
 from .fontes.http import HttpClient
+from .etapa09 import MALHA_SP_URL, _baixar_malha, _carregar_geometrias
 from .paths import resolve_paths
 from .proveniencia import registrar_arquivo, registrar_evento
 from .qa.regressao import carregar_oraculo_csv, comparar_com_oraculo
@@ -146,6 +148,28 @@ def executar(raiz: Path) -> None:
         ),
     )
 
+    raw_malha_dir = paths.raw / "ibge" / "censo2022" / "malha_setores"
+    raw_malha_dir.mkdir(parents=True, exist_ok=True)
+    malha_zip = _baixar_malha(raw_malha_dir / "SP_setores_CD2022.zip", manifesto)
+    geometrias = _carregar_geometrias(
+        malha_zip,
+        set(produto_setorial["codigo_setor"].astype(str)),
+    )
+    faltantes_geometria = sorted(
+        set(produto_setorial["codigo_setor"].astype(str))
+        - set(geometrias["codigo_setor"].astype(str))
+    )
+    produto_geo = integrar_demografia_setorial_geometria(produto_setorial, geometrias)
+    destino_espacial = paths.processed / "espacial"
+    destino_espacial.mkdir(parents=True, exist_ok=True)
+    parquet_geo = destino_espacial / "base_demografia_setorial_2022.parquet"
+    produto_geo.to_parquet(parquet_geo, index=False)
+    registrar_arquivo(
+        manifesto,
+        parquet_geo,
+        origem="Censo 2022 demografia setorial + malha oficial de setores IBGE",
+    )
+
     base2022 = agregar_demografia_2022_municipio(setores)
     observados = set(base2022["codigo_ibge"].astype(str))
     esperados = set(codigos)
@@ -251,6 +275,10 @@ def executar(raiz: Path) -> None:
         "url_demografia": url_demografia,
         "saida_cobertura_csv": str(cobertura_path.relative_to(paths.data_root)),
         "saida_setorial_parquet": str(parquet_setorial.relative_to(paths.data_root)),
+        "saida_setorial_geoparquet": str(parquet_geo.relative_to(paths.data_root)),
+        "fonte_malha_setorial": MALHA_SP_URL,
+        "crs_setorial_geoparquet": str(produto_geo.crs),
+        "setores_sem_geometria_oficial": int(len(faltantes_geometria)),
         "linhas_setoriais_publicadas": int(len(produto_setorial)),
         "setores_setoriais_idade_completa": int(produto_setorial["idade_completa"].sum()),
         "setores_setoriais_com_sigilo": int(produto_setorial["tem_sigilo_demografia"].sum()),
