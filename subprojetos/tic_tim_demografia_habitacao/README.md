@@ -232,3 +232,12 @@ Flags de QA:
 - `v01006_divulgado`.
 
 Esse ativo não substitui nem altera a base municipal longitudinal já validada. Ele expõe de forma reproduzível a granularidade que antes existia apenas como intermediário da etapa 02c e prepara a associação posterior com a malha censitária oficial para GeoParquet em EPSG:4674.
+
+
+### Extensão espacial do produto demográfico setorial
+
+A etapa 02c também publica a associação da base setorial à malha oficial de setores censitários 2022 do IBGE em:
+
+`processed/espacial/base_demografia_setorial_2022.parquet`.
+
+O arquivo é um GeoParquet em SIRGAS 2000 (EPSG:4674), ligado por `codigo_setor` em relação one-to-one. A execução falha se houver setor demográfico sem geometria, duplicidade de chave, geometria ausente/vazia ou perda de cardinalidade. O QA da etapa 02c registra a fonte da malha, o CRS e a quantidade de setores sem geometria oficial.
