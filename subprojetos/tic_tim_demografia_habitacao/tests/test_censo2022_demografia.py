@@ -1,11 +1,14 @@
 import zipfile
 from pathlib import Path
 
+import geopandas as gpd
 import pandas as pd
 import pytest
+from shapely.geometry import box
 
 from tic_tim_demografia.fontes.censo2022 import (
     agregar_demografia_2022_municipio,
+    integrar_demografia_setorial_geometria,
     ler_demografia_setorial_zip,
     preparar_demografia_2022_setorial,
     ler_setores_urbanos_basico_zip,
@@ -201,3 +204,45 @@ def test_produto_setorial_nao_altera_agregacao_municipal(tmp_path):
     assert len(produto) == len(setores)
     assert produto["idade_completa"].all()
     assert produto["pop_total_harmonizada"].sum() == municipal["pop_total_harmonizada"]
+
+
+def test_integra_demografia_setorial_com_malha_em_epsg4674(tmp_path):
+    linhas = [
+        _linha("350160805000001", {"V01031": 10, "V01040": 5}),
+        _linha("350160805000002", {"V01031": 20, "V01040": 10}),
+    ]
+    path = _zip_csv(tmp_path, linhas)
+    setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
+    produto = preparar_demografia_2022_setorial(setores)
+
+    geometrias = gpd.GeoDataFrame(
+        {
+            "codigo_setor": ["350160805000001", "350160805000002"],
+            "geometry": [box(0, 0, 1, 1), box(1, 0, 2, 1)],
+        },
+        geometry="geometry",
+        crs="EPSG:4674",
+    )
+    geo = integrar_demografia_setorial_geometria(produto, geometrias)
+
+    assert len(geo) == 2
+    assert geo["codigo_setor"].nunique() == 2
+    assert str(geo["codigo_setor"].dtype) == "string"
+    assert geo.crs.to_epsg() == 4674
+    assert geo.geometry.notna().all()
+    assert (~geo.geometry.is_empty).all()
+    assert geo["pop_total_harmonizada"].sum() == produto["pop_total_harmonizada"].sum()
+
+
+def test_integra_demografia_setorial_bloqueia_setor_sem_geometria(tmp_path):
+    linha = _linha("350160805000001", {"V01031": 10})
+    path = _zip_csv(tmp_path, [linha])
+    setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
+    produto = preparar_demografia_2022_setorial(setores)
+    geometrias = gpd.GeoDataFrame(
+        {"codigo_setor": [], "geometry": []},
+        geometry="geometry",
+        crs="EPSG:4674",
+    )
+    with pytest.raises(AssertionError, match="sem geometria oficial"):
+        integrar_demografia_setorial_geometria(produto, geometrias)
