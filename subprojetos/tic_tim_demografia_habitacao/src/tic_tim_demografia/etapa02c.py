@@ -11,6 +11,7 @@ from .config import carregar_municipios
 from .fontes.censo2022 import (
     agregar_demografia_2022_municipio,
     diagnosticar_simbolos_demografia,
+    integrar_demografia_setorial_geometria,
     preparar_demografia_2022_setorial,
     ler_demografia_setorial_zip,
     ler_setores_urbanos_basico_zip,
