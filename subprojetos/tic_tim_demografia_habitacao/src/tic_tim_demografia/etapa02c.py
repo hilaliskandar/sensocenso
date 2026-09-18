@@ -11,6 +11,7 @@ from .config import carregar_municipios
 from .fontes.censo2022 import (
     agregar_demografia_2022_municipio,
     diagnosticar_simbolos_demografia,
+    preparar_demografia_2022_setorial,
     ler_demografia_setorial_zip,
     ler_setores_urbanos_basico_zip,
 )
@@ -125,6 +126,26 @@ def executar(raiz: Path) -> None:
         },
     )
 
+    produto_setorial = preparar_demografia_2022_setorial(setores)
+    produto_setorial["municipio_config"] = produto_setorial["codigo_ibge"].map(
+        lambda x: referencia[str(x)][0]
+    )
+    produto_setorial["coroa"] = produto_setorial["codigo_ibge"].map(
+        lambda x: referencia[str(x)][1]
+    )
+    destino_setorial = paths.processed / "setorial"
+    destino_setorial.mkdir(parents=True, exist_ok=True)
+    parquet_setorial = destino_setorial / "base_demografia_2022.parquet"
+    produto_setorial.to_parquet(parquet_setorial, index=False)
+    registrar_arquivo(
+        manifesto,
+        parquet_setorial,
+        origem=(
+            "Censo 2022 agregados setoriais urbanos IBGE; "
+            "x/X preservado como ausente; sem imputação"
+        ),
+    )
+
     base2022 = agregar_demografia_2022_municipio(setores)
     observados = set(base2022["codigo_ibge"].astype(str))
     esperados = set(codigos)
@@ -229,6 +250,10 @@ def executar(raiz: Path) -> None:
         "url_basico": url_basico,
         "url_demografia": url_demografia,
         "saida_cobertura_csv": str(cobertura_path.relative_to(paths.data_root)),
+        "saida_setorial_parquet": str(parquet_setorial.relative_to(paths.data_root)),
+        "linhas_setoriais_publicadas": int(len(produto_setorial)),
+        "setores_setoriais_idade_completa": int(produto_setorial["idade_completa"].sum()),
+        "setores_setoriais_com_sigilo": int(produto_setorial["tem_sigilo_demografia"].sum()),
         "saida_parquet": str(parquet.relative_to(paths.data_root)),
         "saida_csv": str(csv.relative_to(paths.data_root)),
     }
