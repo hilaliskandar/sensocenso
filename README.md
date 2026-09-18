@@ -26,7 +26,7 @@ python scripts/run_pipeline.py --etapa implementadas
 
 No Windows PowerShell, ative o ambiente com `.\.venv\Scripts\Activate.ps1`.
 
-Consulte o [README específico do subprojeto](subprojetos/tic_tim_demografia_habitacao/README.md) para universos, etapas, artefatos, política de ausência/supressão, execução live e ressalva histórica de Moran.
+Consulte o [README específico do subprojeto](subprojetos/tic_tim_demografia_habitacao/README.md) para universos, etapas, artefatos, política de ausência/supressão, execução live, transporte SIDRA e créditos dos precedentes usados na migração para a API de Agregados do IBGE.
 
 ### Plataforma SP do Censo 2022
 
