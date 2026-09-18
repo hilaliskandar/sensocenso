@@ -5,7 +5,7 @@ fontes:
     periodo: 2000
     nivel_territorial: "Município"
     descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/1518"
-    values_base_url: "https://apisidra.ibge.gov.br/values"
+    values_base_url: "https://servicodados.ibge.gov.br/api/v3/agregados"
     uso: "estrutura etária municipal e harmonização 0–14, 15–59 e 60+"
     regra: "situação do domicílio=Total; sexo=Total; não interpolar faixas"
 
@@ -15,7 +15,7 @@ fontes:
     periodo: 2010
     nivel_territorial: "Município"
     descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/3107"
-    values_base_url: "https://apisidra.ibge.gov.br/values"
+    values_base_url: "https://servicodados.ibge.gov.br/api/v3/agregados"
     uso: "estrutura etária municipal de 2010, complementada pela Sinopse quando necessário"
 
   sidra_historico_sexo_situacao:
@@ -24,7 +24,7 @@ fontes:
     periodo: "1970, 1980, 1991, 2000, 2010"
     nivel_territorial: "Município"
     descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/202"
-    values_base_url: "https://apisidra.ibge.gov.br/values"
+    values_base_url: "https://servicodados.ibge.gov.br/api/v3/agregados"
     uso: "fonte histórica de população residente por sexo e situação do domicílio; suporte futuro a séries de urbanização e composição por sexo"
     regra: "nesta versão apenas congelar descritor; não incorporar a indicadores antes de gate semântico e harmonização específicos"
 
@@ -34,7 +34,7 @@ fontes:
     periodo: "1991, 2000"
     nivel_territorial: "Município"
     descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/204"
-    values_base_url: "https://apisidra.ibge.gov.br/values"
+    values_base_url: "https://servicodados.ibge.gov.br/api/v3/agregados"
     uso: "fonte histórica de alfabetização por grupos de idade; suporte futuro ao eixo educacional longitudinal"
     regra: "nesta versão apenas congelar descritor; não presumir comparabilidade com 2010/2022 sem gate metodológico específico"
 
@@ -44,7 +44,7 @@ fontes:
     periodo: "2000, 2010"
     nivel_territorial: "Município"
     descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/156"
-    values_base_url: "https://apisidra.ibge.gov.br/values"
+    values_base_url: "https://servicodados.ibge.gov.br/api/v3/agregados"
     uso: "domicílios, moradores no universo domiciliar compatível e tamanho médio histórico"
     regra: "resolver variáveis e situação Total a partir do descritor; não presumir equivalência com população residente total"
 
@@ -54,7 +54,7 @@ fontes:
     periodo: "2000, 2010"
     nivel_territorial: "Município"
     descriptor_url: "https://apisidra.ibge.gov.br/DescritoresTabela/t/185"
-    values_base_url: "https://apisidra.ibge.gov.br/values"
+    values_base_url: "https://servicodados.ibge.gov.br/api/v3/agregados"
     uso: "distribuição dos domicílios por número de moradores e domicílios unipessoais"
     regra: "resolver estruturalmente a dimensão número de moradores; usar categoria de 1 morador e denominador compatível"
 
@@ -87,6 +87,8 @@ fontes:
     uso: "base auxiliar espacial; baixar apenas quando exigido por etapa específica"
 
 politica_aquisicao:
+  sidra_values_transport: "api_agregados_v3_view_flat"
+  sidra_legacy_endpoint_status: "blocked_by_cloudflare_2026-09"
   preservar_bruto: true
   calcular_sha256: true
   registrar_url_final: true
