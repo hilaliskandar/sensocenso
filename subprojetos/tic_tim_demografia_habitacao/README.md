@@ -215,3 +215,20 @@ A execução live consulta serviços públicos. Timeouts ou indisponibilidades t
 Mudanças metodológicas devem ocorrer em branch própria, acompanhadas de testes e de issue/PR. O fechamento analítico anterior está registrado na issue #12 e no PR #13. O hardening de execução pública está rastreado na issue #14.
 
 Licença do repositório: MIT.
+
+
+## Produto demográfico setorial 2022
+
+A etapa 02c preserva também o ativo setorial usado antes da agregação municipal em:
+
+`processed/setorial/base_demografia_2022.parquet`.
+
+O produto mantém `codigo_setor` e `codigo_ibge` como texto, preserva células protegidas `x/X` como ausentes e não realiza imputação. As onze classes etárias V01031–V01041 permanecem disponíveis em formato numérico nullable. Os indicadores `pop_0_14`, `pop_15_59`, `pop_60_mais`, `pop_total_harmonizada` e `razao_envelhecimento` são derivados somente para setores com estrutura etária integralmente divulgada.
+
+Flags de QA:
+- `idade_completa`;
+- `tem_sigilo_demografia`;
+- `n_celulas_sigilo`;
+- `v01006_divulgado`.
+
+Esse ativo não substitui nem altera a base municipal longitudinal já validada. Ele expõe de forma reproduzível a granularidade que antes existia apenas como intermediário da etapa 02c e prepara a associação posterior com a malha censitária oficial para GeoParquet em EPSG:4674.

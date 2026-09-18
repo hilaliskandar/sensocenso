@@ -7,6 +7,7 @@ import pytest
 from tic_tim_demografia.fontes.censo2022 import (
     agregar_demografia_2022_municipio,
     ler_demografia_setorial_zip,
+    preparar_demografia_2022_setorial,
     ler_setores_urbanos_basico_zip,
 )
 
@@ -143,3 +144,60 @@ def test_fechamento_setorial_bloqueia_divergencia_quando_comparavel(tmp_path):
     setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
     with pytest.raises(AssertionError, match="não fecham com V01006"):
         agregar_demografia_2022_municipio(setores)
+
+
+def test_produto_setorial_preserva_chaves_e_indicadores(tmp_path):
+    completo = _linha(
+        "350160805000001",
+        {"V01031": 10, "V01032": 5, "V01033": 5, "V01034": 20, "V01040": 4, "V01041": 6},
+    )
+    protegido = _linha(
+        "350160805000002",
+        {"V01031": 8, "V01032": 4, "V01033": 3, "V01034": 15, "V01040": 2, "V01041": 3},
+    )
+    protegido["V01034"] = "X"
+    protegido["V01006"] = "X"
+    path = _zip_csv(tmp_path, [completo, protegido])
+    setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
+
+    produto = preparar_demografia_2022_setorial(setores)
+    assert len(produto) == 2
+    assert str(produto["codigo_setor"].dtype) == "string"
+    assert str(produto["codigo_ibge"].dtype) == "string"
+
+    a = produto.loc[produto["codigo_setor"].eq("350160805000001")].iloc[0]
+    assert bool(a["idade_completa"]) is True
+    assert bool(a["tem_sigilo_demografia"]) is False
+    assert a["n_celulas_sigilo"] == 0
+    assert a["pop_0_14"] == 20
+    assert a["pop_60_mais"] == 10
+    assert a["pop_total_harmonizada"] == int(a["V01006"])
+    assert a["razao_envelhecimento"] == 50.0
+
+    b = produto.loc[produto["codigo_setor"].eq("350160805000002")].iloc[0]
+    assert bool(b["idade_completa"]) is False
+    assert bool(b["tem_sigilo_demografia"]) is True
+    assert b["n_celulas_sigilo"] == 2
+    assert pd.isna(b["V01034"])
+    assert pd.isna(b["V01006"])
+    assert pd.isna(b["pop_0_14"])
+    assert pd.isna(b["pop_15_59"])
+    assert pd.isna(b["pop_60_mais"])
+    assert pd.isna(b["pop_total_harmonizada"])
+    assert pd.isna(b["razao_envelhecimento"])
+
+
+def test_produto_setorial_nao_altera_agregacao_municipal(tmp_path):
+    linhas = [
+        _linha("350160805000001", {"V01031": 10, "V01040": 5}),
+        _linha("350160805000002", {"V01031": 20, "V01040": 10}),
+    ]
+    path = _zip_csv(tmp_path, linhas)
+    setores = ler_demografia_setorial_zip(path, codigos_municipais=["3501608"])
+
+    produto = preparar_demografia_2022_setorial(setores)
+    municipal = agregar_demografia_2022_municipio(setores).iloc[0]
+
+    assert len(produto) == len(setores)
+    assert produto["idade_completa"].all()
+    assert produto["pop_total_harmonizada"].sum() == municipal["pop_total_harmonizada"]
