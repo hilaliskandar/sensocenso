@@ -172,6 +172,78 @@ def _converter_demografia_preservando_sigilo(work: pd.DataFrame) -> pd.DataFrame
     return convertido
 
 
+def preparar_demografia_2022_setorial(setores: pd.DataFrame) -> pd.DataFrame:
+    """Materializa o ativo setorial 2022 sem imputar células protegidas.
+
+    Preserva as chaves territoriais como texto, converte apenas valores
+    numericamente divulgados e mantém x/X como ausentes. Indicadores derivados
+    só são calculados quando as onze classes etárias V01031-V01041 estão
+    integralmente divulgadas.
+    """
+    bruto = setores.copy()
+    bruto["codigo_setor"] = bruto["codigo_setor"].astype("string")
+    bruto["codigo_ibge"] = bruto["codigo_ibge"].astype("string")
+
+    sigilo = pd.DataFrame(index=bruto.index)
+    for coluna in COLUNAS_DEMOGRAFIA:
+        valores = bruto[coluna].astype("string").str.strip()
+        sigilo[coluna] = valores.str.casefold().isin(SIMBOLOS_SIGILO)
+
+    work = _converter_demografia_preservando_sigilo(bruto)
+    work["idade_completa"] = work[COLUNAS_IDADE].notna().all(axis=1)
+    work["tem_sigilo_demografia"] = sigilo.any(axis=1)
+    work["n_celulas_sigilo"] = sigilo.sum(axis=1).astype("int64")
+    work["v01006_divulgado"] = work["V01006"].notna()
+
+    for coluna in (
+        "pop_0_14",
+        "pop_15_59",
+        "pop_60_mais",
+        "pop_total_harmonizada",
+        "razao_envelhecimento",
+    ):
+        work[coluna] = pd.Series(pd.NA, index=work.index, dtype="Float64")
+
+    mask = work["idade_completa"]
+    work.loc[mask, "pop_0_14"] = work.loc[
+        mask, ["V01031", "V01032", "V01033"]
+    ].sum(axis=1)
+    work.loc[mask, "pop_15_59"] = work.loc[
+        mask, ["V01034", "V01035", "V01036", "V01037", "V01038", "V01039"]
+    ].sum(axis=1)
+    work.loc[mask, "pop_60_mais"] = work.loc[
+        mask, ["V01040", "V01041"]
+    ].sum(axis=1)
+    work.loc[mask, "pop_total_harmonizada"] = (
+        work.loc[mask, "pop_0_14"]
+        + work.loc[mask, "pop_15_59"]
+        + work.loc[mask, "pop_60_mais"]
+    )
+    mask_razao = mask & work["pop_0_14"].gt(0)
+    work.loc[mask_razao, "razao_envelhecimento"] = (
+        work.loc[mask_razao, "pop_60_mais"]
+        / work.loc[mask_razao, "pop_0_14"]
+        * 100.0
+    )
+
+    ordem = (
+        ["codigo_setor", "codigo_ibge"]
+        + COLUNAS_DEMOGRAFIA
+        + [
+            "idade_completa",
+            "tem_sigilo_demografia",
+            "n_celulas_sigilo",
+            "v01006_divulgado",
+            "pop_0_14",
+            "pop_15_59",
+            "pop_60_mais",
+            "pop_total_harmonizada",
+            "razao_envelhecimento",
+        ]
+    )
+    return work[ordem].sort_values("codigo_setor").reset_index(drop=True)
+
+
 def agregar_demografia_2022_municipio(setores: pd.DataFrame) -> pd.DataFrame:
     """Agrega 2022 no universo setorial com estrutura etária integralmente divulgada.
 
